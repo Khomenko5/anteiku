@@ -9,6 +9,8 @@ import * as Linking from 'expo-linking';
 import { HelmetProvider } from 'react-helmet-async'; 
 
 import NotificationHandler from './src/components/NotificationHandler'; 
+import { UserProvider } from './src/context/UserContext';
+import { COLORS } from './src/theme/colors';
 
 if (Platform.OS === 'web') {
   const style = document.createElement('style');
@@ -113,25 +115,27 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#302D28', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#D97706" />
+      <View style={{ flex: 1, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
   return (
     <HelmetProvider>
-      {user && isEmailVerified && <NotificationHandler />}
-      
-      <NavigationContainer linking={linking}> 
-        {!user ? (
-          <AuthNavigator />
-        ) : isEmailVerified ? (
-          <AppNavigation />
-        ) : (
-          <VerifyEmailScreen onCheck={handleVerificationCheck} />
-        )}
-      </NavigationContainer>
+      <UserProvider>
+        {user && isEmailVerified && <NotificationHandler />}
+        
+        <NavigationContainer linking={linking}> 
+          {!user ? (
+            <AuthNavigator />
+          ) : isEmailVerified ? (
+            <AppNavigation />
+          ) : (
+            <VerifyEmailScreen onCheck={handleVerificationCheck} />
+          )}
+        </NavigationContainer>
+      </UserProvider>
     </HelmetProvider>
   );
 }

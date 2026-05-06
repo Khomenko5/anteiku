@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Image, Modal, FlatList } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Image, Modal, FlatList, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker'; 
-import { auth, db } from '../api/firebaseConfig';
+import { db } from '../api/firebaseConfig';
 import { doc, getDoc, updateDoc, onSnapshot, collection, query, orderBy, limit, addDoc, serverTimestamp, arrayUnion, arrayRemove, where, getDocs } from 'firebase/firestore'; 
 import { Helmet } from 'react-helmet-async';
 import ImageCropper from '../components/ImageCropper'; 
@@ -12,15 +12,19 @@ import PostItem from '../components/PostItem';
 import ShareModal from '../components/ShareModal'; 
 import UserCard from '../components/UserCard';
 
+import { COLORS } from '../theme/colors';
+import { useUser } from '../context/UserContext';
+
 export default function ProfileScreen({ route, navigation }) {
-  const myId = auth.currentUser?.uid;
+  const { currentUser, userData: myUserData } = useUser();
+  const myId = currentUser?.uid;
+
   const identifier = route?.params?.identifier || route?.params?.userId || myId;
   const highlightPostId = route?.params?.highlightPostId;
 
   const [targetUid, setTargetUid] = useState(null);
   const [userNotFound, setUserNotFound] = useState(false);
 
-  const [myUserData, setMyUserData] = useState(null); 
   const [userData, setUserData] = useState(null); 
   
   const [topGuilds, setTopGuilds] = useState([]);
@@ -49,6 +53,8 @@ export default function ProfileScreen({ route, navigation }) {
   const scrollViewRef = useRef(null);
   const [wallSectionY, setWallSectionY] = useState(0);
   const postPositions = useRef({});
+
+  const isMyProfile = targetUid === myId;
 
   useEffect(() => {
     const resolveIdentifier = async () => {
@@ -85,13 +91,14 @@ export default function ProfileScreen({ route, navigation }) {
   useEffect(() => {
     if (!targetUid || !myId) return;
 
-    const unsubMe = onSnapshot(doc(db, "users", myId), (docSnap) => {
-      if (docSnap.exists()) setMyUserData(docSnap.data());
-    });
-
-    const unsubTarget = onSnapshot(doc(db, "users", targetUid), (docSnap) => {
-      if (docSnap.exists()) setUserData(docSnap.data());
-    });
+    let unsubTarget = () => {};
+    if (isMyProfile) {
+      setUserData(myUserData);
+    } else {
+      unsubTarget = onSnapshot(doc(db, "users", targetUid), (docSnap) => {
+        if (docSnap.exists()) setUserData({ id: docSnap.id, ...docSnap.data() });
+      });
+    }
 
     const qTopGuilds = query(collection(db, "guilds"), orderBy("points", "desc"), limit(5));
     const unsubGuilds = onSnapshot(qTopGuilds, (snapshot) => { setTopGuilds(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
@@ -101,8 +108,8 @@ export default function ProfileScreen({ route, navigation }) {
 
     const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => { setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
 
-    return () => { unsubMe(); unsubTarget(); unsubGuilds(); unsubWall(); unsubUsers(); };
-  }, [targetUid, myId]); 
+    return () => { unsubTarget(); unsubGuilds(); unsubWall(); unsubUsers(); };
+  }, [targetUid, myId, isMyProfile, myUserData]); 
 
   useEffect(() => {
     if (highlightPostId && wallPosts.length > 0) {
@@ -144,21 +151,19 @@ export default function ProfileScreen({ route, navigation }) {
   useEffect(() => {
     if (!userData) return;
     const newBadges = [];
-    if (userData.role === 'admin') newBadges.push({ id: 'admin', title: 'Admin', color: '#EF4444', bgColor: '#EF444420' });
+    if (userData.role === 'admin') newBadges.push({ id: 'admin', title: 'Admin', color: COLORS.danger, bgColor: 'rgba(239, 68, 68, 0.2)' });
     if (userData.guildId) {
       const rankIndex = topGuilds.findIndex(g => g.id === userData.guildId);
       if (rankIndex !== -1) {
         const rankTitles = ['TOP 1 Guild', 'TOP 2 Guild', 'TOP 3 Guild', 'TOP 4 Guild', 'TOP 5 Guild'];
-        const colors = ['#FBBF24', '#94A3B8', '#B45309', '#D97706', '#D97706'];
+        const colors = ['#FBBF24', '#94A3B8', '#B45309', COLORS.primary, COLORS.primary];
         newBadges.push({ id: `top${rankIndex + 1}`, title: rankTitles[rankIndex], color: colors[rankIndex], bgColor: `${colors[rankIndex]}20` });
       }
     }
     setBadges(newBadges);
   }, [userData, topGuilds]);
 
-  const isMyProfile = targetUid === myId;
   const isFollowing = myUserData?.following?.includes(targetUid);
-
   const pageTitle = userData ? `${userData.nickname} ${userData.username ? `(@${userData.username})` : ''} | Anteiku` : 'Профіль | Anteiku';
 
   const handleFollowToggle = async () => {
@@ -173,7 +178,7 @@ export default function ProfileScreen({ route, navigation }) {
       if (isTargetFollowingMe) {
         await updateDoc(myRef, { following: arrayUnion(targetUid), friends: arrayUnion(targetUid), activeContacts: arrayUnion(targetUid) });
         await updateDoc(targetRef, { followers: arrayUnion(myId), friends: arrayUnion(myId), activeContacts: arrayUnion(myId) });
-        alert("Ви тепер друзі! Чат створено автоматично.");
+        Alert.alert("Успіх", "Ви тепер друзі! Чат створено автоматично.");
         await sendNotification(targetUid, 'follow', { id: myId, name: myUserData.nickname, avatarUrl: myUserData.avatarUrl }, `також підписався на вас. Тепер ви друзі!`, myId);
       } else {
         await updateDoc(myRef, { following: arrayUnion(targetUid) });
@@ -191,7 +196,9 @@ export default function ProfileScreen({ route, navigation }) {
       const docs = await Promise.all(friendIds.map(id => getDoc(doc(db, "users", id))));
       setFriendsList(docs.map(d => ({ id: d.id, ...d.data() })));
       setShowFriendsModal(true);
-    } catch (error) {}
+    } catch (error) {
+      console.error("Помилка завантаження друзів:", error);
+    }
     setLoading(false);
   };
 
@@ -205,11 +212,11 @@ export default function ProfileScreen({ route, navigation }) {
       const type = cropTarget.type;
       setCropTarget(null);
       if (type === 'avatarUrl') setUploadingAvatar(true); else setUploadingBanner(true);
-      const formData = new FormData(); formData.append('file', `data:image/jpeg;base64,${croppedResult.base64}`); formData.append('upload_preset', "anteiku_app");
-      const response = await fetch(`https://api.cloudinary.com/v1_1/dv7fktjv5/image/upload`, { method: 'POST', body: formData });
+      const formData = new FormData(); formData.append('file', `data:image/jpeg;base64,${croppedResult.base64}`); formData.append('upload_preset', process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: formData });
       const cloudData = await response.json();
-      if (cloudData.secure_url) { await updateDoc(doc(db, "users", auth.currentUser.uid), { [type]: cloudData.secure_url }); }
-    } catch (error) { alert("Помилка: " + error.message); } finally { setUploadingAvatar(false); setUploadingBanner(false); }
+      if (cloudData.secure_url) { await updateDoc(doc(db, "users", currentUser.uid), { [type]: cloudData.secure_url }); }
+    } catch (error) { Alert.alert("Помилка", error.message); } finally { setUploadingAvatar(false); setUploadingBanner(false); }
   };
 
   const handlePickWallImage = async () => {
@@ -221,14 +228,13 @@ export default function ProfileScreen({ route, navigation }) {
     if (!newWallPost.trim() && !wallImage) return;
     setIsUploadingWall(true);
     try {
-      const myDoc = await getDoc(doc(db, "users", myId));
-      const myNickname = myDoc.exists() ? myDoc.data().nickname : "Гість";
-      const myAvatar = myDoc.exists() ? myDoc.data().avatarUrl : null;
+      const myNickname = myUserData?.nickname || "Гість";
+      const myAvatar = myUserData?.avatarUrl || null;
       let finalImageUrl = null;
 
       if (wallImage) {
-        const formData = new FormData(); formData.append('file', wallImage.base64); formData.append('upload_preset', "anteiku_app");
-        const res = await fetch(`https://api.cloudinary.com/v1_1/dv7fktjv5/image/upload`, { method: 'POST', body: formData });
+        const formData = new FormData(); formData.append('file', wallImage.base64); formData.append('upload_preset', process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: formData });
         const cloudData = await res.json();
         if (cloudData.secure_url) finalImageUrl = cloudData.secure_url;
       }
@@ -238,21 +244,21 @@ export default function ProfileScreen({ route, navigation }) {
       setNewWallPost(''); setWallImage(null);
 
       if (!isMyProfile) await sendNotification(targetUid, 'comment', { id: myId, name: myNickname, avatarUrl: myAvatar }, `залишив повідомлення на вашій стіні.`, docRef.id);
-    } catch (error) { alert("Помилка: " + error.message); } finally { setIsUploadingWall(false); }
+    } catch (error) { Alert.alert("Помилка", error.message); } finally { setIsUploadingWall(false); }
   };
 
   if (userNotFound) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         {Platform.OS === 'web' && <Helmet><title>Користувача не знайдено | Anteiku</title></Helmet>}
-        <Ionicons name="search-outline" size={64} color="#D5C4B050" />
-        <Text style={{ color: '#D5C4B0', fontSize: 20, marginTop: 20, fontWeight: 'bold' }}>Користувача не знайдено</Text>
+        <Ionicons name="search-outline" size={64} color={COLORS.textMuted} />
+        <Text style={{ color: COLORS.textSecondary, fontSize: 20, marginTop: 20, fontWeight: 'bold' }}>Користувача не знайдено</Text>
         <TouchableOpacity style={[styles.settingsButtonCompact, { marginTop: 30 }]} onPress={() => navigation.goBack()}><Text style={styles.settingsButtonTextCompact}>Повернутися назад</Text></TouchableOpacity>
       </View>
     );
   }
 
-  if (loading) return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color="#D97706" /></View>;
+  if (loading) return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
 
   return (
     <>
@@ -263,14 +269,14 @@ export default function ProfileScreen({ route, navigation }) {
           <View style={styles.bannerContainer}>
             {userData?.bannerUrl ? <Image source={{ uri: userData.bannerUrl }} style={styles.bannerImage} resizeMode="cover" /> : null}
             <View style={styles.bannerOverlay} />
-            {!isMyProfile && <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}><Ionicons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>}
-            {isMyProfile && <TouchableOpacity style={styles.editBannerButton} onPress={() => handleUpdateImage('bannerUrl')} disabled={uploadingBanner}>{uploadingBanner ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name="camera" size={24} color="#FFF" />}</TouchableOpacity>}
+            {!isMyProfile && <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}><Ionicons name="arrow-back" size={24} color={COLORS.text} /></TouchableOpacity>}
+            {isMyProfile && <TouchableOpacity style={styles.editBannerButton} onPress={() => handleUpdateImage('bannerUrl')} disabled={uploadingBanner}>{uploadingBanner ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="camera" size={24} color={COLORS.text} />}</TouchableOpacity>}
             {userData?.customStatus && <View style={styles.statusWrapper}><Text style={styles.statusText} numberOfLines={3}>"{userData.customStatus}"</Text></View>}
             
             <View style={styles.profileHeaderContent}>
               <View style={styles.avatarContainer}>
                 {userData?.avatarUrl ? <Image source={{ uri: userData.avatarUrl }} style={styles.avatarImage} resizeMode="cover" /> : <View style={styles.avatar}><Text style={styles.avatarText}>{userData?.nickname ? userData.nickname[0].toUpperCase() : 'A'}</Text></View>}
-                {isMyProfile && <TouchableOpacity style={styles.editAvatarButton} onPress={() => handleUpdateImage('avatarUrl')} disabled={uploadingAvatar}>{uploadingAvatar ? <ActivityIndicator color="#FFF" size="small" /> : <Ionicons name="pencil" size={16} color="#FFF" />}</TouchableOpacity>}
+                {isMyProfile && <TouchableOpacity style={styles.editAvatarButton} onPress={() => handleUpdateImage('avatarUrl')} disabled={uploadingAvatar}>{uploadingAvatar ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons name="pencil" size={16} color={COLORS.text} />}</TouchableOpacity>}
               </View>
               <Text style={styles.nickname}>{userData?.nickname} {userData?.guildTag ? <Text style={styles.guildTag}>[{userData.guildTag}]</Text> : ''}</Text>
               {userData?.username && <Text style={styles.usernameText}>@{userData.username}</Text>}
@@ -289,12 +295,12 @@ export default function ProfileScreen({ route, navigation }) {
           </View>
 
           <View style={styles.controlsRow}>
-            {isMyProfile && <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.settingsButtonCompact}><Ionicons name="settings-outline" size={20} color="#D5C4B0" /><Text style={styles.settingsButtonTextCompact}>Налаштування</Text></TouchableOpacity>}
+            {isMyProfile && <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.settingsButtonCompact}><Ionicons name="settings-outline" size={20} color={COLORS.textSecondary} /><Text style={styles.settingsButtonTextCompact}>Налаштування</Text></TouchableOpacity>}
           </View>
 
           <View style={styles.rowSectionsContainer}>
             <View style={styles.achievementsSide}>
-              <TouchableOpacity style={styles.badgesHeaderButton} onPress={() => setShowBadgesModal(true)} activeOpacity={0.7}><Text style={styles.sectionTitle}>Досягнення [{badges.length}]</Text>{badges.length > 3 && <Ionicons name="chevron-forward" size={18} color="#D5C4B080" />}</TouchableOpacity>
+              <TouchableOpacity style={styles.badgesHeaderButton} onPress={() => setShowBadgesModal(true)} activeOpacity={0.7}><Text style={styles.sectionTitle}>Досягнення [{badges.length}]</Text>{badges.length > 3 && <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />}</TouchableOpacity>
               {badges.length > 0 ? (
                 <View style={styles.badgesContainer}>
                   {badges.slice(0, 3).map((badge) => (
@@ -311,25 +317,25 @@ export default function ProfileScreen({ route, navigation }) {
                   <TouchableOpacity style={styles.favoriteCard} activeOpacity={0.8} onPress={() => Platform.OS === 'web' && window.open(`https://rawg.io/games/${userData.favoriteGame.slug}`, '_blank')}>
                     <Image source={{ uri: userData.favoriteGame.image }} style={styles.favoriteCardImage} />
                     <View style={styles.favoriteOverlay} />
-                    <View style={styles.favoriteInfo}><Ionicons name="game-controller" size={16} color="#D97706" /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteGame.name}</Text></View>
+                    <View style={styles.favoriteInfo}><Ionicons name="game-controller" size={16} color={COLORS.primary} /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteGame.name}</Text></View>
                   </TouchableOpacity>
-                ) : <View style={styles.favoritePlaceholder}><Ionicons name="game-controller-outline" size={24} color="#D5C4B030" /><Text style={styles.placeholderText}>Гра не обрана</Text></View>}
+                ) : <View style={styles.favoritePlaceholder}><Ionicons name="game-controller-outline" size={24} color="rgba(213, 196, 176, 0.3)" /><Text style={styles.placeholderText}>Гра не обрана</Text></View>}
 
                 {userData?.favoriteMusic ? (
                   <TouchableOpacity style={styles.favoriteCard} activeOpacity={0.8} onPress={() => Platform.OS === 'web' && window.open(userData.favoriteMusic.url, '_blank')}>
                     <Image source={{ uri: userData.favoriteMusic.image }} style={styles.favoriteCardImage} />
                     <View style={styles.favoriteOverlay} />
-                    <View style={styles.favoriteInfo}><Ionicons name="musical-notes" size={16} color="#D97706" /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteMusic.name}</Text><Text style={styles.favoriteSubtitle} numberOfLines={1}>{userData.favoriteMusic.artist}</Text></View>
+                    <View style={styles.favoriteInfo}><Ionicons name="musical-notes" size={16} color={COLORS.primary} /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteMusic.name}</Text><Text style={styles.favoriteSubtitle} numberOfLines={1}>{userData.favoriteMusic.artist}</Text></View>
                   </TouchableOpacity>
-                ) : <View style={styles.favoritePlaceholder}><Ionicons name="musical-notes-outline" size={24} color="#D5C4B030" /><Text style={styles.placeholderText}>Трек не обрано</Text></View>}
+                ) : <View style={styles.favoritePlaceholder}><Ionicons name="musical-notes-outline" size={24} color="rgba(213, 196, 176, 0.3)" /><Text style={styles.placeholderText}>Трек не обрано</Text></View>}
 
                 {userData?.favoriteWatch ? (
                   <TouchableOpacity style={styles.favoriteCard} activeOpacity={0.8} onPress={() => Platform.OS === 'web' && window.open(userData.favoriteWatch.url, '_blank')}>
-                    {userData.favoriteWatch.image ? <Image source={{ uri: userData.favoriteWatch.image }} style={styles.favoriteCardImage} /> : <View style={[styles.favoriteCardImage, {backgroundColor: '#35322D'}]} />}
+                    {userData.favoriteWatch.image ? <Image source={{ uri: userData.favoriteWatch.image }} style={styles.favoriteCardImage} /> : <View style={[styles.favoriteCardImage, {backgroundColor: COLORS.surface}]} />}
                     <View style={styles.favoriteOverlay} />
-                    <View style={styles.favoriteInfo}><Ionicons name={userData.favoriteWatch.icon || 'film'} size={16} color="#D97706" /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteWatch.title}</Text><Text style={styles.favoriteSubtitle} numberOfLines={1}>{userData.favoriteWatch.subtitle}</Text></View>
+                    <View style={styles.favoriteInfo}><Ionicons name={userData.favoriteWatch.icon || 'film'} size={16} color={COLORS.primary} /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteWatch.title}</Text><Text style={styles.favoriteSubtitle} numberOfLines={1}>{userData.favoriteWatch.subtitle}</Text></View>
                   </TouchableOpacity>
-                ) : <View style={styles.favoritePlaceholder}><Ionicons name="film-outline" size={24} color="#D5C4B030" /><Text style={styles.placeholderText}>Кіно / Аніме</Text></View>}
+                ) : <View style={styles.favoritePlaceholder}><Ionicons name="film-outline" size={24} color="rgba(213, 196, 176, 0.3)" /><Text style={styles.placeholderText}>Кіно / Аніме</Text></View>}
               </View>
             </View>
           </View>
@@ -339,14 +345,14 @@ export default function ProfileScreen({ route, navigation }) {
             {wallImage && (
               <View style={styles.wallImagePreviewContainer}>
                 <Image source={{ uri: wallImage.uri }} style={styles.wallImagePreview} resizeMode="cover" />
-                <TouchableOpacity style={styles.wallImageRemoveBtn} onPress={() => setWallImage(null)}><Ionicons name="close-circle" size={28} color="#EF4444" /></TouchableOpacity>
+                <TouchableOpacity style={styles.wallImageRemoveBtn} onPress={() => setWallImage(null)}><Ionicons name="close-circle" size={28} color={COLORS.danger} /></TouchableOpacity>
               </View>
             )}
             <View style={styles.wallInputContainer}>
-              <TouchableOpacity style={styles.wallAttachBtn} onPress={handlePickWallImage} disabled={isUploadingWall}><Ionicons name="image-outline" size={28} color="#D97706" /></TouchableOpacity>
-              <TextInput style={styles.wallInput} placeholder={isMyProfile ? "Напишіть щось на своїй стіні..." : `Залиште повідомлення для ${userData?.nickname}...`} placeholderTextColor="#D5C4B050" value={newWallPost} onChangeText={setNewWallPost} multiline />
+              <TouchableOpacity style={styles.wallAttachBtn} onPress={handlePickWallImage} disabled={isUploadingWall}><Ionicons name="image-outline" size={28} color={COLORS.primary} /></TouchableOpacity>
+              <TextInput style={styles.wallInput} placeholder={isMyProfile ? "Напишіть щось на своїй стіні..." : `Залиште повідомлення для ${userData?.nickname}...`} placeholderTextColor={COLORS.textMuted} value={newWallPost} onChangeText={setNewWallPost} multiline />
               <TouchableOpacity onPress={handlePostOnWall} style={styles.wallSendButton} disabled={isUploadingWall}>
-                {isUploadingWall ? <ActivityIndicator size="small" color="#302D28" /> : <Text style={styles.wallSendButtonText}>➤</Text>}
+                {isUploadingWall ? <ActivityIndicator size="small" color={COLORS.background} /> : <Text style={styles.wallSendButtonText}>➤</Text>}
               </TouchableOpacity>
             </View>
             
@@ -371,7 +377,7 @@ export default function ProfileScreen({ route, navigation }) {
           <Modal visible={showFriendsModal} animationType="slide" transparent={true} onRequestClose={() => setShowFriendsModal(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.friendsModalContent}>
-                <View style={styles.modalHeader}><Text style={styles.modalTitle}>Друзі ({friendsList.length})</Text><TouchableOpacity onPress={() => setShowFriendsModal(false)}><Ionicons name="close" size={28} color="#D5C4B080" /></TouchableOpacity></View>
+                <View style={styles.modalHeader}><Text style={styles.modalTitle}>Друзі ({friendsList.length})</Text><TouchableOpacity onPress={() => setShowFriendsModal(false)}><Ionicons name="close" size={28} color={COLORS.textMuted} /></TouchableOpacity></View>
                 <FlatList 
                   data={friendsList} 
                   keyExtractor={item => item.id} 
@@ -385,7 +391,7 @@ export default function ProfileScreen({ route, navigation }) {
                         navigation.push('Profile', { identifier: item.username || item.id }); 
                       }} 
                       rightIconName="chevron-forward" 
-                      rightIconColor="#D5C4B050" 
+                      rightIconColor={COLORS.textMuted} 
                     />
                   )} 
                 />
@@ -396,7 +402,7 @@ export default function ProfileScreen({ route, navigation }) {
           <Modal visible={showBadgesModal} animationType="slide" transparent={true} onRequestClose={() => setShowBadgesModal(false)}>
             <View style={styles.modalOverlay}>
               <View style={styles.friendsModalContent}>
-                <View style={styles.modalHeader}><Text style={styles.modalTitle}>Досягнення ({badges.length})</Text><TouchableOpacity onPress={() => setShowBadgesModal(false)}><Ionicons name="close" size={28} color="#D5C4B080" /></TouchableOpacity></View>
+                <View style={styles.modalHeader}><Text style={styles.modalTitle}>Досягнення ({badges.length})</Text><TouchableOpacity onPress={() => setShowBadgesModal(false)}><Ionicons name="close" size={28} color={COLORS.textMuted} /></TouchableOpacity></View>
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
                   <View style={styles.badgesContainerModal}>
                     {badges.map((badge) => (
@@ -427,52 +433,52 @@ export default function ProfileScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#302D28' },
-  bannerContainer: { height: 380, position: 'relative', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1E293B', borderBottomWidth: 1, borderBottomColor: '#D9770640' },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  bannerContainer: { height: 380, position: 'relative', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1E293B', borderBottomWidth: 1, borderBottomColor: COLORS.border },
   bannerImage: { width: '100%', height: '100%', position: 'absolute' },
   bannerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(30, 41, 59, 0.5)' },
   editBannerButton: { position: 'absolute', top: 40, right: 15, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 20, zIndex: 10, elevation: 5 },
   backButton: { backgroundColor: 'rgba(0,0,0,0.5)', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', position: 'absolute', top: 40, left: 15, zIndex: 10 },
   statusWrapper: { position: 'absolute', bottom: 15, left: 20, zIndex: 10, maxWidth: '40%' },
-  statusText: { color: '#FFF', fontStyle: 'italic', fontSize: 16, textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 4, opacity: 0.9 },
+  statusText: { color: COLORS.text, fontStyle: 'italic', fontSize: 16, textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 4, opacity: 0.9 },
   profileHeaderContent: { alignItems: 'center', zIndex: 2, marginTop: 40 },
   avatarContainer: { position: 'relative', width: 100, height: 100 },
-  avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#D5C4B0', borderWidth: 3, borderColor: '#302D28', justifyContent: 'center', alignItems: 'center' },
-  avatarImage: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: '#302D28' },
-  avatarText: { fontSize: 36, fontWeight: 'bold', color: '#302D28' },
-  editAvatarButton: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#D97706', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#302D28', zIndex: 10 },
-  nickname: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginTop: 10, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  guildTag: { color: '#D97706', fontSize: 18 },
-  usernameText: { color: '#D5C4B080', fontSize: 16, marginTop: 2 }, 
+  avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: COLORS.textSecondary, borderWidth: 3, borderColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
+  avatarImage: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: COLORS.background },
+  avatarText: { fontSize: 36, fontWeight: 'bold', color: COLORS.background },
+  editAvatarButton: { position: 'absolute', bottom: 0, right: 0, backgroundColor: COLORS.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: COLORS.background, zIndex: 10 },
+  nickname: { color: COLORS.text, fontSize: 24, fontWeight: 'bold', marginTop: 10, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  guildTag: { color: COLORS.primary, fontSize: 18 },
+  usernameText: { color: COLORS.textMuted, fontSize: 16, marginTop: 2 }, 
   statsRowProfile: { flexDirection: 'row', marginTop: 15, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 16, paddingHorizontal: 20, paddingVertical: 10 },
   statBox: { alignItems: 'center', marginHorizontal: 15 },
-  statNumber: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-  statLabel: { color: '#D5C4B080', fontSize: 12, marginTop: 2, textTransform: 'uppercase' },
+  statNumber: { color: COLORS.text, fontSize: 18, fontWeight: 'bold' },
+  statLabel: { color: COLORS.textMuted, fontSize: 12, marginTop: 2, textTransform: 'uppercase' },
   followButton: { marginTop: 15, paddingHorizontal: 25, paddingVertical: 10, borderRadius: 20, borderWidth: 1 },
-  btnFollow: { backgroundColor: '#D97706', borderColor: '#D97706' },
-  btnFollowing: { backgroundColor: 'rgba(213, 196, 176, 0.2)', borderColor: '#D5C4B050' },
-  btnFriend: { backgroundColor: '#10B98120', borderColor: '#10B981' },
-  followButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
+  btnFollow: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  btnFollowing: { backgroundColor: 'rgba(213, 196, 176, 0.2)', borderColor: 'rgba(213, 196, 176, 0.5)' },
+  btnFriend: { backgroundColor: 'rgba(16, 185, 129, 0.2)', borderColor: COLORS.success },
+  followButtonText: { color: COLORS.text, fontWeight: 'bold', fontSize: 14 },
   controlsRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, paddingTop: 15, paddingBottom: 5 },
-  settingsButtonCompact: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff10', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: '#D5C4B030' },
-  settingsButtonTextCompact: { color: '#D5C4B0', fontWeight: 'bold', fontSize: 14, marginLeft: 6 },
+  settingsButtonCompact: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff10', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(213, 196, 176, 0.3)' },
+  settingsButtonTextCompact: { color: COLORS.textSecondary, fontWeight: 'bold', fontSize: 14, marginLeft: 6 },
   
   section: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
-  sectionTitle: { color: '#D5C4B0', fontSize: 16, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 10 },
+  sectionTitle: { color: COLORS.textSecondary, fontSize: 16, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 10 },
   
   rowSectionsContainer: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15, gap: 40 },
   achievementsSide: { minWidth: 200, maxWidth: 300 },
   favoritesSide: { flex: 1, minWidth: 350, maxWidth: 750 },
   
   favoritesRow: { flexDirection: 'row', gap: 10 },
-  favoriteCard: { flex: 1, height: 100, borderRadius: 16, overflow: 'hidden', backgroundColor: '#35322D', borderWidth: 1, borderColor: '#47392b', elevation: 4, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5 },
+  favoriteCard: { flex: 1, height: 100, borderRadius: 16, overflow: 'hidden', backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.surfaceLight, elevation: 4, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5 },
   favoriteCardImage: { width: '100%', height: '100%', position: 'absolute' },
   favoriteOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(48, 45, 40, 0.6)' },
   favoriteInfo: { flex: 1, justifyContent: 'flex-end', padding: 10 },
-  favoriteTitle: { color: '#FFF', fontSize: 12, fontWeight: 'bold', marginTop: 4, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 2 },
-  favoriteSubtitle: { color: '#D5C4B080', fontSize: 10, marginTop: 2, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 2 },
-  favoritePlaceholder: { flex: 1, height: 100, borderRadius: 16, borderWidth: 1, borderColor: '#D5C4B020', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)' },
-  placeholderText: { color: '#D5C4B030', fontSize: 10, marginTop: 5 },
+  favoriteTitle: { color: COLORS.text, fontSize: 12, fontWeight: 'bold', marginTop: 4, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 2 },
+  favoriteSubtitle: { color: COLORS.textMuted, fontSize: 10, marginTop: 2, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 2 },
+  favoritePlaceholder: { flex: 1, height: 100, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(213, 196, 176, 0.2)', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)' },
+  placeholderText: { color: 'rgba(213, 196, 176, 0.3)', fontSize: 10, marginTop: 5 },
 
   badgesHeaderButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   badgesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -486,18 +492,18 @@ const styles = StyleSheet.create({
   wallInputContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
   wallAttachBtn: { padding: 10, marginRight: 5, justifyContent: 'center', alignItems: 'center' },
   wallImagePreviewContainer: { position: 'relative', alignSelf: 'flex-start', marginBottom: 15, marginLeft: 50 },
-  wallImagePreview: { width: 120, height: 120, borderRadius: 16, borderWidth: 2, borderColor: '#D97706' },
-  wallImageRemoveBtn: { position: 'absolute', top: -10, right: -10, backgroundColor: '#302D28', borderRadius: 14 },
+  wallImagePreview: { width: 120, height: 120, borderRadius: 16, borderWidth: 2, borderColor: COLORS.primary },
+  wallImageRemoveBtn: { position: 'absolute', top: -10, right: -10, backgroundColor: COLORS.background, borderRadius: 14 },
 
-  wallInput: { flex: 1, backgroundColor: '#ffffff05', color: '#FFF', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#D5C4B020', minHeight: 50 },
-  wallSendButton: { backgroundColor: '#D97706', width: 50, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
-  wallSendButtonText: { color: '#302D28', fontSize: 20, fontWeight: 'bold' },
-  wallPlaceholder: { padding: 20, borderWidth: 1, borderColor: '#D5C4B030', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center' },
-  wallText: { color: '#D5C4B040' },
+  wallInput: { flex: 1, backgroundColor: '#ffffff05', color: COLORS.text, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(213, 196, 176, 0.2)', minHeight: 50 },
+  wallSendButton: { backgroundColor: COLORS.primary, width: 50, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
+  wallSendButtonText: { color: COLORS.background, fontSize: 20, fontWeight: 'bold' },
+  wallPlaceholder: { padding: 20, borderWidth: 1, borderColor: 'rgba(213, 196, 176, 0.3)', borderStyle: 'dashed', borderRadius: 12, alignItems: 'center' },
+  wallText: { color: 'rgba(213, 196, 176, 0.4)' },
   
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(48, 45, 40, 0.95)', justifyContent: 'flex-end' },
-  friendsModalContent: { backgroundColor: '#47392b', flex: 1, marginTop: 60, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, borderWidth: 1, borderColor: '#D9770640' },
+  modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'flex-end' },
+  friendsModalContent: { backgroundColor: COLORS.surfaceLight, flex: 1, marginTop: 60, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, borderWidth: 1, borderColor: COLORS.border },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
-  emptyText: { color: '#D5C4B050', textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
+  modalTitle: { color: COLORS.text, fontSize: 22, fontWeight: 'bold' },
+  emptyText: { color: COLORS.textMuted, textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
 });
