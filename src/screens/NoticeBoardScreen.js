@@ -3,6 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../api/firebaseConfig';
 import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, updateDoc, increment, deleteDoc } from 'firebase/firestore';
+import { COLORS } from '../theme/colors';
+import { useToast } from '../context/ToastContext';
 
 export default function NoticeBoardScreen({ navigation }) {
   const [userData, setUserData] = useState(null);
@@ -17,6 +19,8 @@ export default function NoticeBoardScreen({ navigation }) {
   const [selectedPost, setSelectedPost] = useState(null);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
+
+  const { showToast } = useToast();
 
   useEffect(() => {
     const userId = auth.currentUser?.uid;
@@ -46,9 +50,9 @@ export default function NoticeBoardScreen({ navigation }) {
   }, [selectedPost]);
 
   const handleCreatePost = async () => {
-    if (!title || !description || !bounty) return alert("Заповніть усі поля!");
+    if (!title || !description || !bounty) return showToast('error', 'Помилка', 'Заповніть усі поля!');
     const bountyNumber = parseInt(bounty);
-    if (isNaN(bountyNumber) || bountyNumber <= 0) return alert("Некоректна нагорода!");
+    if (isNaN(bountyNumber) || bountyNumber <= 0) return showToast('error', 'Помилка', 'Некоректна нагорода!');
 
     try {
       setLoading(true);
@@ -58,7 +62,8 @@ export default function NoticeBoardScreen({ navigation }) {
         status: 'open', createdAt: serverTimestamp()
       });
       setTitle(''); setDescription(''); setBounty(''); setIsCreating(false); setLoading(false);
-    } catch (error) { alert("Помилка: " + error.message); setLoading(false); }
+      showToast('success', 'Успіх', 'Завдання успішно створено!');
+    } catch (error) { showToast('error', 'Помилка', error.message); setLoading(false); }
   };
 
   const handleSendComment = async () => {
@@ -74,7 +79,7 @@ export default function NoticeBoardScreen({ navigation }) {
         createdAt: serverTimestamp()
       });
       setNewComment('');
-    } catch (error) { console.error(error); }
+    } catch (error) { console.error(error); showToast('error', 'Помилка', 'Не вдалося відправити відповідь'); }
   };
 
   const handleAcceptAnswer = async (comment) => {
@@ -84,12 +89,12 @@ export default function NoticeBoardScreen({ navigation }) {
 
       if (comment.authorGuildId) {
         await updateDoc(doc(db, "guilds", comment.authorGuildId), { points: increment(selectedPost.bounty) });
-        alert(`✅ ${selectedPost.bounty} балів успішно зараховано гільдії [${comment.authorGuildTag}]!`);
+        showToast('success', 'Успіх!', `${selectedPost.bounty} балів успішно зараховано гільдії [${comment.authorGuildTag}]!`);
       } else {
-        alert("✅ Відповідь прийнято! Але користувач не в гільдії, бали згоріли.");
+        showToast('success', 'Успіх!', 'Відповідь прийнято! Але користувач не в гільдії, бали згоріли.');
       }
       setSelectedPost(null); 
-    } catch (error) { alert("Помилка нарахування: " + error.message); }
+    } catch (error) { showToast('error', 'Помилка нарахування', error.message); }
   };
 
   const handleDeletePost = async (postId) => {
@@ -97,7 +102,8 @@ export default function NoticeBoardScreen({ navigation }) {
       try {
         await deleteDoc(doc(db, "board_posts", postId));
         if (selectedPost && selectedPost.id === postId) setSelectedPost(null); 
-      } catch (error) { alert("Помилка видалення: " + error.message); }
+        showToast('success', 'Видалено', 'Завдання видалено');
+      } catch (error) { showToast('error', 'Помилка видалення', error.message); }
     };
     if (Platform.OS === 'web') {
       if (window.confirm("Видалити це завдання назавжди?")) confirmAction();
@@ -110,7 +116,8 @@ export default function NoticeBoardScreen({ navigation }) {
     const confirmAction = async () => {
       try {
         await deleteDoc(doc(db, "board_posts", selectedPost.id, "comments", commentId));
-      } catch (error) { alert("Помилка видалення: " + error.message); }
+        showToast('success', 'Видалено', 'Відповідь видалено');
+      } catch (error) { showToast('error', 'Помилка видалення', error.message); }
     };
     if (Platform.OS === 'web') {
       if (window.confirm("Видалити цю відповідь?")) confirmAction();
@@ -119,7 +126,7 @@ export default function NoticeBoardScreen({ navigation }) {
     }
   };
 
-  if (loading) return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color="#D97706" /></View>;
+  if (loading) return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
 
   if (selectedPost) {
     return (
@@ -132,7 +139,7 @@ export default function NoticeBoardScreen({ navigation }) {
           ListHeaderComponent={
             <View style={styles.headerContainerWrapper}>
               <TouchableOpacity onPress={() => setSelectedPost(null)} style={[styles.backButton, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]}>
-                <Ionicons name="arrow-back" size={20} color="#D97706" style={{ marginRight: 5 }} />
+                <Ionicons name="arrow-back" size={20} color={COLORS.primary} style={{ marginRight: 5 }} />
                 <Text style={styles.backButtonText}>Дошка Завдань</Text>
               </TouchableOpacity>
 
@@ -144,13 +151,13 @@ export default function NoticeBoardScreen({ navigation }) {
                   
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={styles.bountyBadge}>
-                      <Ionicons name="trophy-outline" size={14} color="#D97706" style={{ marginRight: 4 }} />
+                      <Ionicons name="trophy-outline" size={14} color={COLORS.primary} style={{ marginRight: 4 }} />
                       <Text style={styles.bountyText}>{selectedPost.bounty}</Text>
                     </View>
 
                     {(selectedPost.authorId === auth.currentUser?.uid || userData?.role === 'admin') && (
                       <TouchableOpacity style={{ marginLeft: 12, padding: 4 }} onPress={() => handleDeletePost(selectedPost.id)}>
-                      <Ionicons name="ellipsis-horizontal" size={24} color="#D5C4B080" />
+                      <Ionicons name="ellipsis-horizontal" size={24} color={COLORS.textMuted} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -176,7 +183,7 @@ export default function NoticeBoardScreen({ navigation }) {
                     
                     {(item.authorId === auth.currentUser?.uid || userData?.role === 'admin') && (
                       <TouchableOpacity style={{ marginLeft: 10, padding: 4 }} onPress={(e) => { e.stopPropagation(); handleDeletePost(item.id); }}>
-                      <Ionicons name="ellipsis-horizontal" size={24} color="#D5C4B080" />
+                      <Ionicons name="ellipsis-horizontal" size={24} color={COLORS.textMuted} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -195,9 +202,9 @@ export default function NoticeBoardScreen({ navigation }) {
 
         {selectedPost.status === 'open' ? (
           <View style={styles.inputRow}>
-            <TextInput style={[styles.chatInput, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Написати відповідь..." placeholderTextColor="#D5C4B050" value={newComment} onChangeText={setNewComment} multiline />
+            <TextInput style={[styles.chatInput, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Написати відповідь..." placeholderTextColor={COLORS.textMuted} value={newComment} onChangeText={setNewComment} multiline />
             <TouchableOpacity onPress={handleSendComment} style={[styles.sendButton, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]}>
-              <Ionicons name="send" size={16} color="#FFF" />
+              <Ionicons name="send" size={16} color={COLORS.text} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -212,9 +219,9 @@ export default function NoticeBoardScreen({ navigation }) {
       <View style={styles.container}>
         <View style={styles.headerContainerWrapper}>
           <Text style={styles.headerTitleCreate}>Нове завдання</Text>
-          <TextInput style={[styles.input, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Коротке питання..." placeholderTextColor="#D5C4B080" value={title} onChangeText={setTitle} />
-          <TextInput style={[styles.input, { height: 120, textAlignVertical: 'top' }, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Опишіть проблему детально..." placeholderTextColor="#D5C4B080" value={description} onChangeText={setDescription} multiline />
-          <TextInput style={[styles.input, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Нагорода (балів)" placeholderTextColor="#D5C4B080" value={bounty} onChangeText={setBounty} keyboardType="numeric" />
+          <TextInput style={[styles.input, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Коротке питання..." placeholderTextColor={COLORS.textMuted} value={title} onChangeText={setTitle} />
+          <TextInput style={[styles.input, { height: 120, textAlignVertical: 'top' }, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Опишіть проблему детально..." placeholderTextColor={COLORS.textMuted} value={description} onChangeText={setDescription} multiline />
+          <TextInput style={[styles.input, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} placeholder="Нагорода (балів)" placeholderTextColor={COLORS.textMuted} value={bounty} onChangeText={setBounty} keyboardType="numeric" />
           <TouchableOpacity onPress={handleCreatePost} style={[styles.buttonMain, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]}><Text style={styles.buttonTextMain}>Опублікувати на Дошці</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setIsCreating(false)} style={[styles.buttonSecondary, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]}><Text style={styles.buttonTextSecondary}>Скасувати</Text></TouchableOpacity>
         </View>
@@ -247,13 +254,13 @@ export default function NoticeBoardScreen({ navigation }) {
 
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={styles.bountyBadge}>
-                  <Ionicons name="trophy-outline" size={12} color="#D97706" style={{ marginRight: 4 }} />
+                  <Ionicons name="trophy-outline" size={12} color={COLORS.primary} style={{ marginRight: 4 }} />
                   <Text style={styles.bountyText}>{item.bounty}</Text>
                 </View>
 
                 {(item.authorId === auth.currentUser?.uid || userData?.role === 'admin') && (
                   <TouchableOpacity style={{ marginLeft: 10 }} onPress={(e) => { e.stopPropagation(); handleDeletePost(item.id); }}>
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -274,46 +281,46 @@ export default function NoticeBoardScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#302D28', paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: 20 },
   headerContainerWrapper: { width: '100%', maxWidth: 1000, alignSelf: 'center' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 60 : 30, paddingBottom: 20 },
-  headerTitle: { color: '#D5C4B0', fontSize: 24, fontWeight: 'bold' },
-  headerTitleCreate: { color: '#D5C4B0', fontSize: 24, fontWeight: 'bold', paddingTop: Platform.OS === 'ios' ? 60 : 30, paddingBottom: 20, textAlign: 'center' },
-  addButton: { backgroundColor: '#D97706', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  addButtonText: { color: '#302D28', fontWeight: 'bold', fontSize: 14 },
-  input: { backgroundColor: 'rgba(0,0,0,0.2)', color: '#FFF', padding: 18, borderRadius: 15, borderWidth: 1, borderColor: '#FFF20', fontSize: 16, marginBottom: 15 },
-  buttonMain: { backgroundColor: '#D97706', padding: 18, borderRadius: 15, alignItems: 'center', marginBottom: 15 },
-  buttonTextMain: { color: '#302D28', fontWeight: 'bold', fontSize: 16 },
-  buttonSecondary: { borderWidth: 1, borderColor: '#D97706', padding: 18, borderRadius: 15, alignItems: 'center' },
-  buttonTextSecondary: { color: '#D97706', fontWeight: 'bold', fontSize: 16 },
-  emptyText: { color: '#D5C4B050', textAlign: 'center', marginTop: 50, fontSize: 16, fontStyle: 'italic' },
-  postCard: { width: '100%', maxWidth: 1000, alignSelf: 'center', backgroundColor: '#35322D', padding: 20, borderRadius: 24, marginBottom: 15, borderWidth: 1, borderColor: '#47392b', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 15, elevation: 8 },
+  headerTitle: { color: COLORS.textSecondary, fontSize: 24, fontWeight: 'bold' },
+  headerTitleCreate: { color: COLORS.textSecondary, fontSize: 24, fontWeight: 'bold', paddingTop: Platform.OS === 'ios' ? 60 : 30, paddingBottom: 20, textAlign: 'center' },
+  addButton: { backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  addButtonText: { color: COLORS.background, fontWeight: 'bold', fontSize: 14 },
+  input: { backgroundColor: 'rgba(0,0,0,0.2)', color: COLORS.text, padding: 18, borderRadius: 15, borderWidth: 1, borderColor: COLORS.border, fontSize: 16, marginBottom: 15 },
+  buttonMain: { backgroundColor: COLORS.primary, padding: 18, borderRadius: 15, alignItems: 'center', marginBottom: 15 },
+  buttonTextMain: { color: COLORS.background, fontWeight: 'bold', fontSize: 16 },
+  buttonSecondary: { borderWidth: 1, borderColor: COLORS.primary, padding: 18, borderRadius: 15, alignItems: 'center' },
+  buttonTextSecondary: { color: COLORS.primary, fontWeight: 'bold', fontSize: 16 },
+  emptyText: { color: COLORS.textMuted, textAlign: 'center', marginTop: 50, fontSize: 16, fontStyle: 'italic' },
+  postCard: { width: '100%', maxWidth: 1000, alignSelf: 'center', backgroundColor: COLORS.surface, padding: 20, borderRadius: 24, marginBottom: 15, borderWidth: 1, borderColor: COLORS.surfaceLight, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 15, elevation: 8 },
   postCardResolved: { opacity: 0.6 },
   postHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  authorLink: { color: '#D97706', fontSize: 14, fontWeight: 'bold' },
-  bountyBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#D9770640' },
-  bountyText: { color: '#D97706', fontWeight: 'bold', fontSize: 12 },
-  postTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 6 },
-  postTitleLarge: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
-  postDescription: { color: '#D5C4B080', fontSize: 14, marginBottom: 15 },
-  postDescriptionLarge: { color: '#D5C4B0', fontSize: 16, lineHeight: 24, marginBottom: 15 },
+  authorLink: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
+  bountyBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(217, 119, 6, 0.4)' },
+  bountyText: { color: COLORS.primary, fontWeight: 'bold', fontSize: 12 },
+  postTitle: { color: COLORS.text, fontSize: 18, fontWeight: 'bold', marginBottom: 6 },
+  postTitleLarge: { color: COLORS.text, fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
+  postDescription: { color: COLORS.textMuted, fontSize: 14, marginBottom: 15 },
+  postDescriptionLarge: { color: COLORS.textSecondary, fontSize: 16, lineHeight: 24, marginBottom: 15 },
   statusContainer: { flexDirection: 'row', alignItems: 'center' },
-  statusDotOpen: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981', marginRight: 8 },
-  statusDotResolved: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginRight: 8 },
-  statusText: { color: '#D5C4B050', fontSize: 12, fontWeight: 'bold' },
+  statusDotOpen: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success, marginRight: 8 },
+  statusDotResolved: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.danger, marginRight: 8 },
+  statusText: { color: COLORS.textMuted, fontSize: 12, fontWeight: 'bold' },
   backButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingTop: Platform.OS === 'ios' ? 60 : 30, marginBottom: 10 },
-  backButtonText: { color: '#D97706', fontSize: 16, fontWeight: 'bold' },
-  selectedPostCard: { backgroundColor: '#35322D', padding: 20, borderRadius: 24, marginBottom: 20, borderWidth: 1, borderColor: '#D9770640' },
-  commentsTitle: { color: '#D5C4B0', fontSize: 18, fontWeight: 'bold', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#D5C4B010', paddingBottom: 10 },
-  commentCard: { backgroundColor: '#47392b', padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#D5C4B010' },
-  correctCommentCard: { borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.1)' }, 
+  backButtonText: { color: COLORS.primary, fontSize: 16, fontWeight: 'bold' },
+  selectedPostCard: { backgroundColor: COLORS.surface, padding: 20, borderRadius: 24, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(217, 119, 6, 0.4)' },
+  commentsTitle: { color: COLORS.textSecondary, fontSize: 18, fontWeight: 'bold', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 10 },
+  commentCard: { backgroundColor: COLORS.surfaceLight, padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
+  correctCommentCard: { borderColor: COLORS.success, backgroundColor: 'rgba(16, 185, 129, 0.1)' }, 
   commentHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  correctBadge: { color: '#10B981', fontSize: 12, fontWeight: 'bold' },
-  commentText: { color: '#D5C4B0', fontSize: 14, lineHeight: 20 },
-  adminAcceptButton: { marginTop: 15, backgroundColor: 'rgba(217, 119, 6, 0.1)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#D97706', alignItems: 'center' },
-  adminAcceptButtonText: { color: '#D97706', fontWeight: 'bold', fontSize: 14 },
-  inputRow: { width: '100%', maxWidth: 1000, alignSelf: 'center', flexDirection: 'row', marginTop: 10, alignItems: 'center', paddingBottom: 20, borderTopWidth: 1, borderTopColor: '#D5C4B020', paddingTop: 15 },
-  chatInput: { flex: 1, backgroundColor: '#47392b', color: '#FFF', paddingHorizontal: 15, paddingVertical: 12, borderRadius: 20, marginHorizontal: 8, maxHeight: 100 },
-  sendButton: { backgroundColor: '#D97706', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginLeft: 5 },
-  resolvedFooterText: { color: '#D5C4B050', textAlign: 'center', paddingVertical: 20, fontStyle: 'italic', width: '100%', maxWidth: 1000, alignSelf: 'center' }
+  correctBadge: { color: COLORS.success, fontSize: 12, fontWeight: 'bold' },
+  commentText: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20 },
+  adminAcceptButton: { marginTop: 15, backgroundColor: 'rgba(217, 119, 6, 0.1)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.primary, alignItems: 'center' },
+  adminAcceptButtonText: { color: COLORS.primary, fontWeight: 'bold', fontSize: 14 },
+  inputRow: { width: '100%', maxWidth: 1000, alignSelf: 'center', flexDirection: 'row', marginTop: 10, alignItems: 'center', paddingBottom: 20, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 15 },
+  chatInput: { flex: 1, backgroundColor: COLORS.surfaceLight, color: COLORS.text, paddingHorizontal: 15, paddingVertical: 12, borderRadius: 20, marginHorizontal: 8, maxHeight: 100 },
+  sendButton: { backgroundColor: COLORS.primary, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginLeft: 5 },
+  resolvedFooterText: { color: COLORS.textMuted, textAlign: 'center', paddingVertical: 20, fontStyle: 'italic', width: '100%', maxWidth: 1000, alignSelf: 'center' }
 });

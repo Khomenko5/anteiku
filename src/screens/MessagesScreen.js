@@ -1,35 +1,27 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Image, Dimensions, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../api/firebaseConfig';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, doc, updateDoc, arrayUnion, arrayRemove, getDocs, setDoc, increment, limit, startAt, endAt, documentId, deleteDoc, where } from 'firebase/firestore';
+import { db } from '../api/firebaseConfig';
+import { collection, query, orderBy, doc, updateDoc, getDocs, limit, startAt, endAt, documentId, where } from 'firebase/firestore';
 import { Helmet } from 'react-helmet-async';
 import { useIsFocused } from '@react-navigation/native';
 
 import ImageViewerModal from '../components/ImageViewerModal';
-import AudioPlayer from '../components/AudioPlayer';
 import UserCard from '../components/UserCard';
 import ChatInput from '../components/ChatInput';
+import MessageItem from '../components/MessageItem'; 
 import { COLORS } from '../theme/colors';
 
-const ChatImageWrapper = ({ uri, onPress }) => {
-  const [aspectRatio, setAspectRatio] = useState(null);
-  useEffect(() => {
-    if (uri) Image.getSize(uri, (w, h) => { if (w > 0 && h > 0) setAspectRatio(w / h); }, () => setAspectRatio(1));
-  }, [uri]);
-  return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={{ marginTop: 4, marginBottom: 4 }}>
-      {aspectRatio ? <Image source={{ uri }} style={{ width: 240, aspectRatio: aspectRatio, borderRadius: 12 }} resizeMode="cover" /> : <View style={{ width: 240, height: 240, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="small" color={COLORS.primary} /></View>}
-    </TouchableOpacity>
-  );
-};
+import { useUser } from '../context/UserContext'; 
+import { useChat } from '../hooks/useChat'; 
+import { useToast } from '../context/ToastContext';
 
 export default function MessagesScreen({ navigation }) {
-  const currentUser = auth.currentUser;
-  const [userData, setUserData] = useState(null);
+  const { currentUser, userData } = useUser(); 
+  const { showToast } = useToast();
+  
   const [users, setUsers] = useState([]); 
   const [selectedUser, setSelectedUser] = useState(null);
-  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -37,13 +29,6 @@ export default function MessagesScreen({ navigation }) {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const userSearchTimeout = useRef(null);
-
-  const [editingMessageId, setEditingMessageId] = useState(null);
-  const [replyingTo, setReplyingTo] = useState(null);
-  const [reactingToMsgId, setReactingToMsgId] = useState(null);
-
-  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
-  const typingTimeoutRef = useRef(null);
 
   const screenWidth = Dimensions.get('window').width;
   const isLargeScreen = screenWidth > 768;
@@ -57,56 +42,57 @@ export default function MessagesScreen({ navigation }) {
   const isFocused = useIsFocused();
 
   useEffect(() => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return;
-    const unsubscribeUser = onSnapshot(doc(db, "users", userId), (docSnap) => { 
-      if (docSnap.exists()) setUserData(docSnap.data()); 
-    });
-    return () => unsubscribeUser();
-  }, []);
+    let isMounted = true; 
 
-  useEffect(() => {
-    const activeIds = userData?.activeContacts || [];
-    const idsToFetch = [...activeIds];
-    
-    if (selectedUser?.id && !idsToFetch.includes(selectedUser.id)) {
-      idsToFetch.push(selectedUser.id);
-    }
+    const fetchContacts = async () => {
+      const activeIds = userData?.activeContacts || [];
+      const idsToFetch = [...activeIds];
+      
+      if (selectedUser?.id && !idsToFetch.includes(selectedUser.id)) {
+        idsToFetch.push(selectedUser.id);
+      }
 
-    if (idsToFetch.length === 0) {
-      setUsers([]);
-      setLoading(false);
-      return;
-    }
+      if (idsToFetch.length === 0) {
+        if (isMounted) {
+          setUsers([]);
+          setLoading(false);
+        }
+        return;
+      }
 
-    const chunk = idsToFetch.slice(0, 30);
-    const q = query(collection(db, "users"), where(documentId(), "in", chunk));
-    
-    const unsubscribeUsers = onSnapshot(q, (snapshot) => {
-      const usersList = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-      usersList.sort((a, b) => (b.isOnline === true) - (a.isOnline === true));
-      setUsers(usersList);
-      setLoading(false);
+      const chunk = idsToFetch.slice(0, 30);
+      const q = query(collection(db, "users"), where(documentId(), "in", chunk));
+      
+      try {
+        const snapshot = await getDocs(q);
+        const usersList = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        usersList.sort((a, b) => (b.isOnline === true) - (a.isOnline === true));
+        
+        if (isMounted) {
+          setUsers(usersList);
+          setSelectedUser(prevSelected => {
+            if (!prevSelected) return null;
+            const freshUserData = usersList.find(u => u.id === prevSelected.id);
+            return freshUserData || prevSelected;
+          });
+        }
+      } catch (error) {
+        showToast('error', 'Помилка', 'Не вдалося завантажити контакти.');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
 
-      setSelectedUser(prevSelected => {
-        if (!prevSelected) return null;
-        const freshUserData = usersList.find(u => u.id === prevSelected.id);
-        return freshUserData || prevSelected;
-      });
-    });
-    
-    return () => unsubscribeUsers();
+    fetchContacts();
+
+    return () => { isMounted = false; };
   }, [userData?.activeContacts, selectedUser?.id]);
 
   const handleSearchUsers = async (text) => {
     setSearchText(text);
-    if (text.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
+    if (text.trim().length < 2) { setSearchResults([]); return; }
     if (userSearchTimeout.current) clearTimeout(userSearchTimeout.current);
-
+    
     userSearchTimeout.current = setTimeout(async () => {
       setIsSearchingUsers(true);
       try {
@@ -120,122 +106,64 @@ export default function MessagesScreen({ navigation }) {
           const snapNickname = await getDocs(qNickname);
           results = snapNickname.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
         }
-
-        setSearchResults(results.filter(u => u.id !== auth.currentUser.uid));
-      } catch (error) {
-        console.error("Помилка пошуку:", error);
-      } finally {
-        setIsSearchingUsers(false);
+        setSearchResults(results.filter(u => u.id !== currentUser?.uid));
+      } catch (error) { 
+        showToast('error', 'Помилка пошуку', 'Не вдалося виконати пошук.'); 
+      } finally { 
+        setIsSearchingUsers(false); 
       }
     }, 600);
   };
 
-  const getChatId = (user1, user2) => [user1, user2].sort().join('_');
+  const chatId = selectedUser ? [currentUser?.uid, selectedUser.id].sort().join('_') : null;
+  const basePath = chatId ? `chats/${chatId}` : null;
+
+  const {
+    messages,
+    replyingTo, setReplyingTo,
+    editingMessageId, setEditingMessageId,
+    reactingToMsgId, setReactingToMsgId,
+    isPartnerTyping,
+    sendMessage,
+    handleReact,
+    handleDeleteMessage,
+    saveEditedMessage,
+    handleTyping
+  } = useChat({
+    basePath,
+    currentUserId: currentUser?.uid,
+    currentUserData: userData,
+    partnerId: selectedUser?.id 
+  });
 
   useEffect(() => {
-    setEditingMessageId(null); setReplyingTo(null); setReactingToMsgId(null); setIsPartnerTyping(false);
-    if (!selectedUser?.id) return;
-    const myId = auth.currentUser.uid;
-    const chatId = getChatId(myId, selectedUser.id);
-    const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"));
-    const unsubscribeMessages = onSnapshot(q, (snapshot) => { setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
-    const typingRef = doc(db, "chats", chatId, "typingStatus", selectedUser.id);
-    const unsubscribeTyping = onSnapshot(typingRef, (docSnap) => { if (docSnap.exists()) setIsPartnerTyping(docSnap.data().isTyping); });
-
-    return () => { unsubscribeMessages(); unsubscribeTyping(); };
-  }, [selectedUser?.id]);
-
-  useEffect(() => {
-    if (isFocused && selectedUser?.id && userData?.unreadCounts?.[selectedUser.id] > 0) {
-      updateDoc(doc(db, "users", auth.currentUser.uid), { [`unreadCounts.${selectedUser.id}`]: 0 }).catch(err => console.error(err));
+    if (isFocused && selectedUser?.id && userData?.unreadCounts?.[selectedUser.id] > 0 && currentUser?.uid) {
+      updateDoc(doc(db, "users", currentUser.uid), { [`unreadCounts.${selectedUser.id}`]: 0 })
+        .catch(e => console.warn("Фонове оновлення лічильника не вдалося", e));
     }
-  }, [isFocused, selectedUser?.id, userData?.unreadCounts]);
+  }, [isFocused, selectedUser?.id, userData?.unreadCounts, currentUser?.uid]);
 
   useEffect(() => {
-    if (!isFocused || !selectedUser?.id || messages.length === 0) return;
-    const myId = auth.currentUser?.uid;
-    if (!myId) return;
+    if (!isFocused || !selectedUser?.id || messages.length === 0 || !currentUser?.uid) return;
     const unreadMessages = messages.filter(m => m.senderId === selectedUser.id && !m.isRead);
     if (unreadMessages.length > 0) {
-      const chatId = getChatId(myId, selectedUser.id);
-      unreadMessages.forEach(async (msg) => { try { await updateDoc(doc(db, "chats", chatId, "messages", msg.id), { isRead: true }); } catch (e) {} });
+      unreadMessages.forEach(async (msg) => { 
+        try { 
+          await updateDoc(doc(db, basePath, "messages", msg.id), { isRead: true }); 
+        } catch (e) {
+          console.warn(`Фонове оновлення статусу прочитання для ${msg.id} не вдалося`, e);
+        } 
+      });
     }
-  }, [messages, selectedUser?.id, isFocused]);
+  }, [messages, selectedUser?.id, isFocused, currentUser?.uid, basePath]);
 
   const openImageViewer = (uri) => { setCurrentImageUri(uri); setIsImageViewerVisible(true); };
-
-  const formatMessageTime = (timestamp) => {
-    if (!timestamp) return '';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const getUserAvatar = (uid) => {
-    if (uid === auth.currentUser.uid) return userData?.avatarUrl;
-    const u = users.find(user => user.id === uid);
-    return u?.avatarUrl;
-  };
-
-  const handleTyping = (text) => {
-    if (!selectedUser) return;
-    const myId = auth.currentUser.uid;
-    const chatId = getChatId(myId, selectedUser.id);
-    const typingRef = doc(db, "chats", chatId, "typingStatus", myId);
-
-    setDoc(typingRef, { isTyping: true }, { merge: true }).catch(() => {});
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => { setDoc(typingRef, { isTyping: false }, { merge: true }).catch(() => {}); }, 2000);
-  };
-
-  const sendMessage = async (text = null, imageUrl = null, audioUrl = null, fileUrl = null, fileName = null) => {
-    if (!text && !imageUrl && !audioUrl && !fileUrl) return;
-
-    const myId = auth.currentUser.uid;
-    const partnerId = selectedUser.id;
-    const chatId = getChatId(myId, partnerId);
-
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    setDoc(doc(db, "chats", chatId, "typingStatus", myId), { isTyping: false }, { merge: true }).catch(() => {});
-
-    const messageData = { text: text, imageUrl: imageUrl, audioUrl: audioUrl, fileUrl: fileUrl, fileName: fileName, senderId: myId, createdAt: serverTimestamp(), isRead: false };
-
-    if (replyingTo) {
-      messageData.replyTo = { id: replyingTo.id, text: replyingTo.text || (replyingTo.imageUrl ? '📷 Фото' : replyingTo.fileUrl ? '📄 Файл' : '🎤 Голос'), senderName: replyingTo.senderId === myId ? (userData?.nickname || 'Ви') : selectedUser.nickname };
-    }
-    setReplyingTo(null);
-
-    try {
-      await addDoc(collection(db, "chats", chatId, "messages"), messageData);
-      await updateDoc(doc(db, "users", myId), { activeContacts: arrayUnion(partnerId) });
-      await updateDoc(doc(db, "users", partnerId), { activeContacts: arrayUnion(myId), [`unreadCounts.${myId}`]: increment(1) });
-    } catch (error) { console.error("Помилка відправки:", error); }
-  };
-
-  const handleReact = async (messageId, emoji, currentReactions = []) => {
-    const myId = auth.currentUser.uid;
-    const chatId = getChatId(myId, selectedUser.id);
-    const existingReaction = currentReactions.find(r => r.userId === myId && r.emoji === emoji);
-    
-    try {
-      const msgRef = doc(db, "chats", chatId, "messages", messageId);
-      if (existingReaction) { await updateDoc(msgRef, { reactions: arrayRemove({ emoji: emoji, userId: myId }) }); } 
-      else { await updateDoc(msgRef, { reactions: arrayUnion({ emoji: emoji, userId: myId }) }); }
-      setReactingToMsgId(null); 
-    } catch (error) { console.error("Помилка додавання/видалення реакції:", error); }
-  };
-
-  const handleDeleteMessage = async (messageId) => {
-    if (Platform.OS === 'web') {
-      if (window.confirm("Видалити це повідомлення?")) { await deleteDoc(doc(db, "chats", getChatId(auth.currentUser.uid, selectedUser.id), "messages", messageId)); }
-    } else {
-      Alert.alert("Видалення", "Видалити це повідомлення?", [{ text: "Скасувати", style: "cancel" }, { text: "Видалити", style: "destructive", onPress: async () => { await deleteDoc(doc(db, "chats", getChatId(auth.currentUser.uid, selectedUser.id), "messages", messageId)); }}]);
-    }
-  };
+  const getUserAvatar = (uid) => { return uid === currentUser?.uid ? userData?.avatarUrl : users.find(u => u.id === uid)?.avatarUrl; };
 
   const handleMessagePress = (item) => {
     const now = Date.now();
     const lastPress = lastPressMap.current[item.id] || 0;
-    if (now - lastPress < 300) { startReply(item); lastPressMap.current[item.id] = 0; } 
+    if (now - lastPress < 300) { setReplyingTo(item); setEditingMessageId(null); lastPressMap.current[item.id] = 0; } 
     else { lastPressMap.current[item.id] = now; setReactingToMsgId(null); }
   };
 
@@ -243,15 +171,6 @@ export default function MessagesScreen({ navigation }) {
   const cancelReply = () => setReplyingTo(null);
   const startEditing = (item) => { setEditingMessageId(item.id); setReplyingTo(null); };
   const cancelEditing = () => { setEditingMessageId(null); };
-
-  const saveEditedMessage = async (textToSave) => {
-    if (!textToSave || !editingMessageId) return;
-    const chatId = getChatId(auth.currentUser.uid, selectedUser.id);
-    try {
-      await updateDoc(doc(db, "chats", chatId, "messages", editingMessageId), { text: textToSave, isEdited: true });
-      setEditingMessageId(null);
-    } catch (error) { console.error("Помилка редагування:", error); }
-  };
 
   const renderCell = useCallback(({ children, index, style, ...props }) => {
     const cellZIndex = 10000 - index;
@@ -334,105 +253,27 @@ export default function MessagesScreen({ navigation }) {
             showsVerticalScrollIndicator={false}
             CellRendererComponent={renderCell}
             renderItem={({ item, index }) => {
-              const isMe = item.senderId === auth.currentUser.uid;
+              const isMe = item.senderId === currentUser?.uid;
               const nextMessage = messages[index - 1];
               const showTail = !nextMessage || nextMessage.senderId !== item.senderId;
 
-              const groupedReactions = item.reactions ? item.reactions.reduce((acc, curr) => {
-                if (!acc[curr.emoji]) acc[curr.emoji] = [];
-                acc[curr.emoji].push(curr.userId);
-                return acc;
-              }, {}) : {};
-
-              const renderReplyBlock = () => {
-                if (!item.replyTo) return null;
-                return (
-                  <View style={styles.messageReplyContainer}>
-                    <View style={[styles.messageReplyLine, { backgroundColor: isMe ? COLORS.text : COLORS.primary }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.messageReplyName, { color: isMe ? COLORS.text : COLORS.primary }]}>{item.replyTo.senderName}</Text>
-                      <Text style={styles.messageReplyText} numberOfLines={1}>{item.replyTo.text}</Text>
-                    </View>
-                  </View>
-                );
-              };
-
               return (
-                <View style={[styles.messageWrapper, isMe ? styles.messageWrapperMine : styles.messageWrapperTheirs, showTail && (isMe ? styles.messageWrapperMineTail : styles.messageWrapperTheirsTail)]}>
-                  
-                  {reactingToMsgId === item.id && (
-                    <View style={[styles.reactionPickerBubble, isMe ? { right: 15 } : { left: 15 }]}>
-                      {['👍','❤️','😂','🔥','😢'].map(emoji => (
-                        <TouchableOpacity key={emoji} onPress={() => handleReact(item.id, emoji, item.reactions)} style={styles.reactionBtn}>
-                          <Text style={{fontSize: 22}}>{emoji}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-
-                  <TouchableOpacity activeOpacity={1} onPress={() => handleMessagePress(item)} style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage, showTail && (isMe ? styles.myMessageTail : styles.theirMessageTail)]}>
-                    {showTail && <View style={[styles.messageTail, isMe ? styles.messageTailMine : styles.messageTailTheirs]} />}
-                    {renderReplyBlock()}
-
-                    {item.sharedPost && (
-                      <TouchableOpacity activeOpacity={0.85} style={[styles.sharedPostCard, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]} onPress={() => navigation.navigate('Profile', { identifier: item.sharedPost.authorId, highlightPostId: item.sharedPost.id })}>
-                        <View style={styles.sharedPostHeader}>
-                          {item.sharedPost.authorAvatarUrl ? (
-                            <Image source={{ uri: item.sharedPost.authorAvatarUrl }} style={styles.sharedPostAvatar} resizeMode="cover" />
-                          ) : (
-                            <View style={styles.sharedPostAvatarPlaceholder}><Text style={styles.sharedPostAvatarText}>{item.sharedPost.authorName[0].toUpperCase()}</Text></View>
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.sharedPostName}>{item.sharedPost.authorName}</Text>
-                            <Text style={styles.sharedPostSubText}>Пересланий запис</Text>
-                          </View>
-                        </View>
-                        {item.sharedPost.text ? <Text style={styles.sharedPostText} numberOfLines={4}>{item.sharedPost.text}</Text> : null}
-                        {item.sharedPost.imageUrl ? <Image source={{ uri: item.sharedPost.imageUrl }} style={styles.sharedPostImage} resizeMode="cover" /> : null}
-                      </TouchableOpacity>
-                    )}
-
-                    {item.imageUrl && <ChatImageWrapper uri={item.imageUrl} onPress={() => openImageViewer(item.imageUrl)} />}
-                    {item.fileUrl && (
-                      <TouchableOpacity style={styles.fileContainer} onPress={() => Platform.OS === 'web' ? window.open(item.fileUrl, '_blank') : null}>
-                        <Ionicons name="document-text" size={24} color={isMe ? COLORS.text : COLORS.primary} />
-                        <Text style={[styles.fileName, {color: isMe ? COLORS.text : COLORS.textSecondary}]} numberOfLines={1}>{item.fileName}</Text>
-                      </TouchableOpacity>
-                    )}
-                    {item.text ? <Text style={styles.messageText}>{item.text}</Text> : null}
-                    {item.audioUrl && <AudioPlayer audioUrl={item.audioUrl} />}
-                    
-                    {Object.keys(groupedReactions).length > 0 && (
-                      <View style={styles.reactionsDisplayRow}>
-                        {Object.entries(groupedReactions).map(([emoji, userIds]) => (
-                          <TouchableOpacity key={emoji} style={[styles.reactionBadge, userIds.includes(auth.currentUser.uid) && styles.reactionBadgeActive]} onPress={() => handleReact(item.id, emoji, item.reactions)}>
-                            <Text style={styles.reactionBadgeText}>{emoji}</Text>
-                            <View style={styles.reactionAvatarsRow}>
-                              {userIds.slice(0, 3).map((uid, idx) => {
-                                const avatar = getUserAvatar(uid);
-                                return avatar ? (
-                                  <Image key={uid} source={{ uri: avatar }} style={[styles.reactionMiniAvatar, { marginLeft: idx > 0 ? -6 : 4 }]} />
-                                ) : (
-                                  <View key={uid} style={[styles.reactionMiniAvatarPlaceholder, { marginLeft: idx > 0 ? -6 : 4 }]} />
-                                );
-                              })}
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-
-                    <View style={styles.messageFooterInfo}>
-                      {item.isEdited && <Text style={styles.editedText}>(ред.) </Text>}
-                      <Text style={styles.messageTime}>{formatMessageTime(item.createdAt)}</Text>
-                      {isMe && <Ionicons name={item.isRead ? "checkmark-done-outline" : "checkmark-outline"} size={16} color={item.isRead ? COLORS.success : "rgba(255,255,255,0.6)"} style={{ marginLeft: 4, marginRight: 6 }} />}
-                      <TouchableOpacity onPress={() => setReactingToMsgId(reactingToMsgId === item.id ? null : item.id)} style={styles.actionIconBtn}><Ionicons name="add-circle-outline" size={14} color="rgba(255,255,255,0.6)" /></TouchableOpacity>
-                      <TouchableOpacity onPress={() => startReply(item)} style={styles.actionIconBtn}><Ionicons name="arrow-undo-outline" size={14} color="rgba(255,255,255,0.6)" /></TouchableOpacity>
-                      {isMe && !item.audioUrl && <TouchableOpacity onPress={() => startEditing(item)} style={styles.actionIconBtn}><Ionicons name="pencil" size={14} color="rgba(255,255,255,0.6)" /></TouchableOpacity>}
-                      {isMe && <TouchableOpacity onPress={() => handleDeleteMessage(item.id)} style={styles.actionIconBtn}><Ionicons name="trash-outline" size={14} color="rgba(255,255,255,0.6)" /></TouchableOpacity>}
-                    </View>
-                  </TouchableOpacity>
-                </View>
+                <MessageItem 
+                  item={item}
+                  isMe={isMe}
+                  showTail={showTail}
+                  reactingToMsgId={reactingToMsgId}
+                  setReactingToMsgId={setReactingToMsgId}
+                  onReact={handleReact}
+                  onPress={handleMessagePress}
+                  onReply={startReply}
+                  onEdit={startEditing}
+                  onDelete={handleDeleteMessage}
+                  onOpenImageViewer={openImageViewer}
+                  navigation={navigation}
+                  getUserAvatar={getUserAvatar}
+                  currentUserId={currentUser?.uid}
+                />
               );
             }}
           />
@@ -441,7 +282,7 @@ export default function MessagesScreen({ navigation }) {
             onSendMessage={sendMessage}
             onTyping={handleTyping}
             replyingTo={replyingTo}
-            replyPreviewName={replyingTo?.senderId === auth.currentUser.uid ? (userData?.nickname || 'Ви') : selectedUser.nickname}
+            replyPreviewName={replyingTo?.senderId === currentUser?.uid ? (userData?.nickname || 'Ви') : selectedUser.nickname}
             replyPreviewText={replyingTo?.text || (replyingTo?.imageUrl ? '📷 Фото' : replyingTo?.fileUrl ? '📄 Файл' : '🎤 Голосове повідомлення')}
             onCancelReply={cancelReply}
             editingMessage={messages.find(m => m.id === editingMessageId)}
@@ -459,10 +300,7 @@ export default function MessagesScreen({ navigation }) {
     const formatRegistrationDate = (timestamp) => {
       if (!timestamp) return '';
       const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = String(date.getFullYear()).slice(-2);
-      return `${day}.${month}.${year}`;
+      return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getFullYear()).slice(-2)}`;
     };
 
     return (
@@ -602,7 +440,6 @@ const styles = StyleSheet.create({
   contactTag: { color: 'rgba(213, 196, 176, 0.4)', fontSize: 13 },
   unreadBadge: { backgroundColor: COLORS.danger, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', marginLeft: 10, paddingHorizontal: 6 },
   unreadBadgeText: { color: COLORS.text, fontSize: 10, fontWeight: 'bold' },
-
   chatPane: { flex: 2.2, backgroundColor: COLORS.surface, borderRadius: 24, marginLeft: 15, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.surfaceLight, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
   emptyChatContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyChatText: { color: COLORS.textMuted, fontSize: 18, marginTop: 20 },
@@ -617,55 +454,6 @@ const styles = StyleSheet.create({
   chatHeaderName: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
   typingText: { color: COLORS.primary, fontSize: 12, marginTop: 2, fontStyle: 'italic', fontWeight: '500' },
   onlineTextSmall: { color: COLORS.success, fontSize: 12, marginTop: 2 },
-
-  messageWrapper: { width: '100%', marginBottom: 6, position: 'relative' },
-  messageWrapperMine: { alignItems: 'flex-end', paddingRight: 10 },
-  messageWrapperTheirs: { alignItems: 'flex-start', paddingLeft: 10 },
-  messageWrapperMineTail: { marginBottom: 15 },
-  messageWrapperTheirsTail: { marginBottom: 15 },
-  messageBubble: { maxWidth: '75%', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, position: 'relative' },
-  myMessage: { backgroundColor: '#8B5E34' },
-  theirMessage: { backgroundColor: COLORS.surfaceLight },
-  myMessageTail: { borderBottomRightRadius: 4 },
-  theirMessageTail: { borderBottomLeftRadius: 4 },
-  messageTail: { position: 'absolute', bottom: 0, width: 0, height: 0, borderTopWidth: 15, borderTopColor: 'transparent' },
-  messageTailMine: { right: -8, borderLeftWidth: 15, borderLeftColor: '#8B5E34' },
-  messageTailTheirs: { left: -8, borderRightWidth: 15, borderRightColor: COLORS.surfaceLight },
-  messageText: { color: COLORS.text, fontSize: 15, lineHeight: 22 },
-  messageFooterInfo: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 4 },
-  messageTime: { color: 'rgba(255, 255, 255, 0.6)', fontSize: 10 },
-  editedText: { color: 'rgba(255, 255, 255, 0.5)', fontSize: 10, fontStyle: 'italic' },
-  actionIconBtn: { marginLeft: 8, padding: 2, outlineStyle: 'none' },
-
-  messageReplyContainer: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 6, marginBottom: 8, overflow: 'hidden' },
-  messageReplyLine: { width: 3, borderRadius: 2, marginRight: 8 },
-  messageReplyName: { fontSize: 12, fontWeight: 'bold', marginBottom: 2 },
-  messageReplyText: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-
-  sharedPostCard: { backgroundColor: 'rgba(0,0,0,0.25)', padding: 12, borderRadius: 16, borderLeftWidth: 4, borderLeftColor: COLORS.primary, minWidth: 260, maxWidth: '100%', marginBottom: 8, marginTop: 4 },
-  sharedPostHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  sharedPostAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
-  sharedPostAvatarPlaceholder: { width: 32, height: 32, borderRadius: 16, marginRight: 10, backgroundColor: 'rgba(213, 196, 176, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  sharedPostAvatarText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: 'bold' },
-  sharedPostName: { color: COLORS.text, fontWeight: 'bold', fontSize: 14 },
-  sharedPostSubText: { color: COLORS.textMuted, fontSize: 11, fontStyle: 'italic' },
-  sharedPostText: { color: COLORS.text, fontSize: 14, marginBottom: 10, lineHeight: 20 },
-  sharedPostImage: { width: '100%', height: 200, borderRadius: 8 },
-
-  fileContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 8, marginTop: 5, marginBottom: 5 },
-  fileName: { fontSize: 14, marginLeft: 8, textDecorationLine: 'underline', flexShrink: 1 },
-  
-  reactionPickerBubble: { position: 'absolute', bottom: '100%', flexDirection: 'row', backgroundColor: COLORS.surface, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginBottom: 5, borderWidth: 1, borderColor: COLORS.border, elevation: 15, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, zIndex: 1000 },
-  reactionBtn: { paddingHorizontal: 6 },
-  
-  reactionsDisplayRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
-  reactionBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, paddingLeft: 6, paddingRight: 4, paddingVertical: 2, marginRight: 4, marginTop: 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  reactionBadgeActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
-  reactionBadgeText: { fontSize: 12, color: COLORS.text },
-  reactionAvatarsRow: { flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
-  reactionMiniAvatar: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, borderColor: COLORS.surface },
-  reactionMiniAvatarPlaceholder: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, borderColor: COLORS.surface, backgroundColor: COLORS.primary },
-
   infoPane: { flex: 1, minWidth: 320, maxWidth: 420, backgroundColor: COLORS.surface, borderRadius: 24, marginLeft: 15, borderWidth: 1, borderColor: COLORS.surfaceLight, alignItems: 'center', paddingVertical: 30, paddingHorizontal: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
   infoProfileSection: { alignItems: 'center', width: '100%' },
   infoAvatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 3, borderColor: COLORS.primary, marginBottom: 15 },
@@ -689,14 +477,12 @@ const styles = StyleSheet.create({
   mediaHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 5 },
   mediaTitle: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' },
   mediaCount: { color: COLORS.primary, fontSize: 16, fontWeight: 'bold' },
-
   allMediaOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.85)', justifyContent: 'center', alignItems: 'center' },
   allMediaModalInner: { width: '85%', height: '85%', backgroundColor: COLORS.surface, borderRadius: 24, borderWidth: 1, borderColor: COLORS.surfaceLight, overflow: 'hidden', paddingBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 10 },
   allMediaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   allMediaTitle: { color: COLORS.text, fontSize: 24, fontWeight: 'bold' },
   allMediaGridItem: { flex: 1/5, margin: 4, aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: COLORS.surfaceLight },
   allMediaImage: { width: '100%', height: '100%' },
-
   modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'flex-end' },
   searchModalContent: { backgroundColor: COLORS.surfaceLight, flex: 1, marginTop: 60, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, borderWidth: 1, borderColor: COLORS.border, maxWidth: 600, alignSelf: 'center', width: '100%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../api/firebaseConfig';
 import { collection, query, orderBy, writeBatch, where, getDocs, doc, getDoc, limit, startAfter } from 'firebase/firestore';
 import { Helmet } from 'react-helmet-async';
+import { COLORS } from '../theme/colors';
 
 const NotificationAvatar = ({ senderId, fallbackName, initialAvatar }) => {
   const [avatar, setAvatar] = useState(initialAvatar);
@@ -148,7 +149,7 @@ export default function NotificationsScreen({ navigation }) {
           await batch.commit();
         }
       } catch (error) {
-        console.error("Помилка автоматичного прочитання сповіщень:", error);
+        console.error("Помилка автоматичного прочитання:", error);
       }
     };
 
@@ -157,11 +158,11 @@ export default function NotificationsScreen({ navigation }) {
 
   const getNotificationIcon = (type) => {
     switch (type) {
-      case 'like': return { name: 'heart', color: '#EF4444' };
-      case 'comment': return { name: 'chatbubble', color: '#D97706' };
-      case 'repost': return { name: 'repeat', color: '#10B981' };
+      case 'like': return { name: 'heart', color: COLORS.danger };
+      case 'comment': return { name: 'chatbubble', color: COLORS.primary };
+      case 'repost': return { name: 'repeat', color: COLORS.success };
       case 'follow': return { name: 'person-add', color: '#3B82F6' };
-      default: return { name: 'notifications', color: '#D5C4B0' };
+      default: return { name: 'notifications', color: COLORS.textMuted };
     }
   };
 
@@ -191,7 +192,7 @@ export default function NotificationsScreen({ navigation }) {
             initialAvatar={initialAvatar} 
           />
           <View style={[styles.iconBadge, { backgroundColor: icon.color }]}>
-            <Ionicons name={icon.name} size={12} color="#FFF" />
+            <Ionicons name={icon.name} size={12} color={COLORS.background} />
           </View>
         </View>
 
@@ -202,7 +203,7 @@ export default function NotificationsScreen({ navigation }) {
           <Text style={styles.timeText}>{timeString}</Text>
         </View>
         
-        <Ionicons name="chevron-forward" size={20} color="#D5C4B050" />
+        <Ionicons name="chevron-forward" size={20} color="rgba(213, 196, 176, 0.3)" />
       </TouchableOpacity>
     );
   };
@@ -210,7 +211,7 @@ export default function NotificationsScreen({ navigation }) {
   if (loading && notifications.length === 0) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#D97706" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
@@ -235,7 +236,7 @@ export default function NotificationsScreen({ navigation }) {
         ListEmptyComponent={
           !loading && (
             <View style={styles.emptyState}>
-              <Ionicons name="notifications-off-outline" size={64} color="#D5C4B030" />
+              <Ionicons name="notifications-off-outline" size={64} color="rgba(213, 196, 176, 0.2)" />
               <Text style={styles.emptyStateText}>У вас поки немає сповіщень.</Text>
             </View>
           )
@@ -243,7 +244,7 @@ export default function NotificationsScreen({ navigation }) {
         renderItem={renderItem}
         onEndReached={() => fetchNotifications(true)}
         onEndReachedThreshold={0.1}
-        ListFooterComponent={loadingMore ? <ActivityIndicator size="large" color="#D97706" style={{ marginVertical: 20 }} /> : null}
+        ListFooterComponent={loadingMore ? <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 20 }} /> : null}
         refreshing={refreshing}
         onRefresh={onRefresh}
       />
@@ -252,113 +253,20 @@ export default function NotificationsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#302D28' 
-  },
-  header: { 
-    paddingHorizontal: 20, 
-    paddingTop: Platform.OS === 'ios' ? 60 : 30, 
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#D9770620',
-    backgroundColor: '#302D28',
-    zIndex: 10,
-  },
-  headerTitle: { 
-    color: '#D5C4B0', 
-    fontSize: 24, 
-    fontWeight: 'bold',
-    textAlign: 'center'
-  },
-  listContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 100, 
-    maxWidth: 800,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  notificationCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#35322D',
-    padding: 15,
-    borderRadius: 16,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#47392b',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  avatarWrapper: {
-    position: 'relative',
-    marginRight: 15,
-  },
-  avatarImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: '#D97706',
-  },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#47392b',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D97706',
-  },
-  avatarText: {
-    color: '#D5C4B0',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  iconBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#35322D',
-  },
-  contentWrapper: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  notificationText: {
-    color: '#D5C4B090',
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  senderName: {
-    color: '#FFF',
-    fontWeight: 'bold',
-  },
-  timeText: {
-    color: '#D5C4B050',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 100,
-  },
-  emptyStateText: {
-    color: '#D5C4B050',
-    fontSize: 16,
-    marginTop: 15,
-    fontStyle: 'italic',
-  }
+  container: { flex: 1, backgroundColor: COLORS.background },
+  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 30, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.background, zIndex: 10 },
+  headerTitle: { color: COLORS.textSecondary, fontSize: 24, fontWeight: 'bold', textAlign: 'center' },
+  listContainer: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 100, maxWidth: 800, width: '100%', alignSelf: 'center' },
+  notificationCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, padding: 15, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: COLORS.surfaceLight, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 3 },
+  avatarWrapper: { position: 'relative', marginRight: 15 },
+  avatarImage: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: COLORS.primary },
+  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.surfaceLight, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary },
+  avatarText: { color: COLORS.textSecondary, fontSize: 20, fontWeight: 'bold' },
+  iconBadge: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: COLORS.surface },
+  contentWrapper: { flex: 1, paddingRight: 10 },
+  notificationText: { color: COLORS.text, fontSize: 15, lineHeight: 22 },
+  senderName: { color: COLORS.textSecondary, fontWeight: 'bold' },
+  timeText: { color: COLORS.textMuted, fontSize: 12, marginTop: 4 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 100 },
+  emptyStateText: { color: COLORS.textMuted, fontSize: 16, marginTop: 15, fontStyle: 'italic' }
 });

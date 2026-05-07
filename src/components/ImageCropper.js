@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Image, PanResponder, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { COLORS } from '../theme/colors'; 
+import { useToast } from '../context/ToastContext';
 
 export default function ImageCropper({ imageUri, imageWidth, imageHeight, aspectRatio = 1, onCrop, onCancel }) {
   const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -20,6 +22,7 @@ export default function ImageCropper({ imageUri, imageWidth, imageHeight, aspect
   const [isProcessing, setIsProcessing] = useState(false);
   
   const panState = useRef({ x: 0, y: 0 }).current;
+  const { showToast } = useToast();
 
   const panResponder = useRef(
     PanResponder.create({
@@ -63,7 +66,7 @@ export default function ImageCropper({ imageUri, imageWidth, imageHeight, aspect
       );
       onCrop(result); 
     } catch (error) {
-      alert("Помилка обрізки: " + error.message);
+      showToast('error', 'Помилка обрізки', error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -77,15 +80,15 @@ export default function ImageCropper({ imageUri, imageWidth, imageHeight, aspect
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onCancel} style={styles.headerBtn}>
-          <Ionicons name="close" size={28} color="#FFF" />
+          <Ionicons name="close" size={28} color={COLORS.text} />
         </TouchableOpacity>
         
         <Text style={styles.title}>
-          Кадрування: <Text style={{ color: '#D97706' }}>{isAvatar ? 'Аватар' : 'Банер'}</Text>
+          Кадрування: <Text style={{ color: COLORS.primary }}>{isAvatar ? 'Аватар' : 'Банер'}</Text>
         </Text>
         
         <TouchableOpacity onPress={handleCrop} disabled={isProcessing} style={styles.headerBtn}>
-          {isProcessing ? <ActivityIndicator color="#D97706" /> : <Ionicons name="checkmark" size={28} color="#D97706" />}
+          {isProcessing ? <ActivityIndicator color={COLORS.primary} /> : <Ionicons name="checkmark" size={28} color={COLORS.primary} />}
         </TouchableOpacity>
       </View>
 
@@ -115,10 +118,10 @@ export default function ImageCropper({ imageUri, imageWidth, imageHeight, aspect
         <Text style={styles.zoomText}>Масштаб: {zoom.toFixed(1)}x</Text>
         <View style={styles.zoomButtons}>
           <TouchableOpacity style={styles.zBtn} onPress={() => setZoom(Math.max(1, zoom - 0.2))}>
-            <Ionicons name="remove" size={24} color="#302D28"/>
+            <Ionicons name="remove" size={24} color={COLORS.background}/>
           </TouchableOpacity>
           <TouchableOpacity style={styles.zBtn} onPress={() => setZoom(Math.min(3, zoom + 0.2))}>
-            <Ionicons name="add" size={24} color="#302D28"/>
+            <Ionicons name="add" size={24} color={COLORS.background}/>
           </TouchableOpacity>
         </View>
       </View>
@@ -127,18 +130,18 @@ export default function ImageCropper({ imageUri, imageWidth, imageHeight, aspect
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1E293B', zIndex: 9999 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 50, backgroundColor: '#302D28', borderBottomWidth: 1, borderBottomColor: '#D9770640' },
+  container: { flex: 1, backgroundColor: COLORS.overlay, zIndex: 9999 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 50, backgroundColor: COLORS.background, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   headerBtn: { padding: 5 },
-  title: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  title: { color: COLORS.text, fontSize: 18, fontWeight: 'bold' },
   
   cropArea: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', position: 'relative' },
   cropFrame: { overflow: 'hidden', justifyContent: 'center', alignItems: 'center', backgroundColor: '#222' },
-  cropOverlayBorder: { position: 'absolute', borderWidth: 2, borderColor: '#D97706', opacity: 0.8 },
+  cropOverlayBorder: { position: 'absolute', borderWidth: 2, borderColor: COLORS.primary, opacity: 0.8 },
   
-  controls: { padding: 30, backgroundColor: '#302D28', alignItems: 'center', paddingBottom: 50, borderTopWidth: 1, borderTopColor: '#D9770640' },
-  zoomText: { color: '#D5C4B0', marginBottom: 15, marginTop: 15, fontSize: 16, fontWeight: 'bold' },
+  controls: { padding: 30, backgroundColor: COLORS.background, alignItems: 'center', paddingBottom: 50, borderTopWidth: 1, borderTopColor: COLORS.border },
+  zoomText: { color: COLORS.textSecondary, marginBottom: 15, marginTop: 15, fontSize: 16, fontWeight: 'bold' },
   zoomButtons: { flexDirection: 'row', gap: 30 },
-  zBtn: { backgroundColor: '#D97706', width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
-  hint: { color: '#D5C4B080', fontSize: 14, marginBottom: 10, fontStyle: 'italic' }
+  zBtn: { backgroundColor: COLORS.primary, width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
+  hint: { color: COLORS.textMuted, fontSize: 14, marginBottom: 10, fontStyle: 'italic' }
 });

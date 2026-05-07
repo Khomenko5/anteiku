@@ -14,6 +14,7 @@ import UserCard from '../components/UserCard';
 
 import { COLORS } from '../theme/colors';
 import { useUser } from '../context/UserContext';
+import { useToast } from '../context/ToastContext';
 
 export default function ProfileScreen({ route, navigation }) {
   const { currentUser, userData: myUserData } = useUser();
@@ -53,6 +54,8 @@ export default function ProfileScreen({ route, navigation }) {
   const scrollViewRef = useRef(null);
   const [wallSectionY, setWallSectionY] = useState(0);
   const postPositions = useRef({});
+
+  const { showToast } = useToast();
 
   const isMyProfile = targetUid === myId;
 
@@ -170,21 +173,25 @@ export default function ProfileScreen({ route, navigation }) {
     const myRef = doc(db, "users", myId);
     const targetRef = doc(db, "users", targetUid);
 
-    if (isFollowing) {
-      await updateDoc(myRef, { following: arrayRemove(targetUid), friends: arrayRemove(targetUid) });
-      await updateDoc(targetRef, { followers: arrayRemove(myId), friends: arrayRemove(myId) });
-    } else {
-      const isTargetFollowingMe = myUserData?.followers?.includes(targetUid);
-      if (isTargetFollowingMe) {
-        await updateDoc(myRef, { following: arrayUnion(targetUid), friends: arrayUnion(targetUid), activeContacts: arrayUnion(targetUid) });
-        await updateDoc(targetRef, { followers: arrayUnion(myId), friends: arrayUnion(myId), activeContacts: arrayUnion(myId) });
-        Alert.alert("Успіх", "Ви тепер друзі! Чат створено автоматично.");
-        await sendNotification(targetUid, 'follow', { id: myId, name: myUserData.nickname, avatarUrl: myUserData.avatarUrl }, `також підписався на вас. Тепер ви друзі!`, myId);
+    try {
+      if (isFollowing) {
+        await updateDoc(myRef, { following: arrayRemove(targetUid), friends: arrayRemove(targetUid) });
+        await updateDoc(targetRef, { followers: arrayRemove(myId), friends: arrayRemove(myId) });
       } else {
-        await updateDoc(myRef, { following: arrayUnion(targetUid) });
-        await updateDoc(targetRef, { followers: arrayUnion(myId) });
-        await sendNotification(targetUid, 'follow', { id: myId, name: myUserData.nickname, avatarUrl: myUserData.avatarUrl }, `почав стежити за вами.`, myId);
+        const isTargetFollowingMe = myUserData?.followers?.includes(targetUid);
+        if (isTargetFollowingMe) {
+          await updateDoc(myRef, { following: arrayUnion(targetUid), friends: arrayUnion(targetUid), activeContacts: arrayUnion(targetUid) });
+          await updateDoc(targetRef, { followers: arrayUnion(myId), friends: arrayUnion(myId), activeContacts: arrayUnion(myId) });
+          showToast('success', 'Успіх', 'Ви тепер друзі! Чат створено автоматично.');
+          await sendNotification(targetUid, 'follow', { id: myId, name: myUserData.nickname, avatarUrl: myUserData.avatarUrl }, `також підписався на вас. Тепер ви друзі!`, myId);
+        } else {
+          await updateDoc(myRef, { following: arrayUnion(targetUid) });
+          await updateDoc(targetRef, { followers: arrayUnion(myId) });
+          await sendNotification(targetUid, 'follow', { id: myId, name: myUserData.nickname, avatarUrl: myUserData.avatarUrl }, `почав стежити за вами.`, myId);
+        }
       }
+    } catch(error) {
+      showToast('error', 'Помилка', error.message);
     }
   };
 
@@ -198,6 +205,7 @@ export default function ProfileScreen({ route, navigation }) {
       setShowFriendsModal(true);
     } catch (error) {
       console.error("Помилка завантаження друзів:", error);
+      showToast('error', 'Помилка', 'Не вдалося завантажити список друзів');
     }
     setLoading(false);
   };
@@ -216,7 +224,8 @@ export default function ProfileScreen({ route, navigation }) {
       const response = await fetch(`https://api.cloudinary.com/v1_1/${process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: formData });
       const cloudData = await response.json();
       if (cloudData.secure_url) { await updateDoc(doc(db, "users", currentUser.uid), { [type]: cloudData.secure_url }); }
-    } catch (error) { Alert.alert("Помилка", error.message); } finally { setUploadingAvatar(false); setUploadingBanner(false); }
+      showToast('success', 'Збережено', 'Зображення оновлено');
+    } catch (error) { showToast('error', 'Помилка', error.message); } finally { setUploadingAvatar(false); setUploadingBanner(false); }
   };
 
   const handlePickWallImage = async () => {
@@ -244,7 +253,8 @@ export default function ProfileScreen({ route, navigation }) {
       setNewWallPost(''); setWallImage(null);
 
       if (!isMyProfile) await sendNotification(targetUid, 'comment', { id: myId, name: myNickname, avatarUrl: myAvatar }, `залишив повідомлення на вашій стіні.`, docRef.id);
-    } catch (error) { Alert.alert("Помилка", error.message); } finally { setIsUploadingWall(false); }
+      showToast('success', 'Успіх', 'Повідомлення додано на стіну');
+    } catch (error) { showToast('error', 'Помилка', error.message); } finally { setIsUploadingWall(false); }
   };
 
   if (userNotFound) {
@@ -331,7 +341,7 @@ export default function ProfileScreen({ route, navigation }) {
 
                 {userData?.favoriteWatch ? (
                   <TouchableOpacity style={styles.favoriteCard} activeOpacity={0.8} onPress={() => Platform.OS === 'web' && window.open(userData.favoriteWatch.url, '_blank')}>
-                    {userData.favoriteWatch.image ? <Image source={{ uri: userData.favoriteWatch.image }} style={styles.favoriteCardImage} /> : <View style={[styles.favoriteCardImage, {backgroundColor: COLORS.surface}]} />}
+                    <Image source={{ uri: userData.favoriteWatch.image }} style={styles.favoriteCardImage} />
                     <View style={styles.favoriteOverlay} />
                     <View style={styles.favoriteInfo}><Ionicons name={userData.favoriteWatch.icon || 'film'} size={16} color={COLORS.primary} /><Text style={styles.favoriteTitle} numberOfLines={1}>{userData.favoriteWatch.title}</Text><Text style={styles.favoriteSubtitle} numberOfLines={1}>{userData.favoriteWatch.subtitle}</Text></View>
                   </TouchableOpacity>

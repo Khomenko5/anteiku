@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../theme/colors';
 
-export default function UserCard({ item, onPress, rightIconName = "chevron-forward", rightIconColor = "#D97706" }) {
+export default function UserCard({ item, onPress, rightIconName = "chevron-forward", rightIconColor = COLORS.primary }) {
   const isGuild = item.isGuild;
 
   return (
@@ -11,8 +12,8 @@ export default function UserCard({ item, onPress, rightIconName = "chevron-forwa
       onPress={onPress}
     >
       {isGuild ? (
-        <View style={[styles.avatarPlaceholder, {backgroundColor: '#D97706'}]}>
-          <Ionicons name="shield" size={24} color="#302D28" />
+        <View style={[styles.avatarPlaceholder, {backgroundColor: COLORS.primary}]}>
+          <Ionicons name="shield" size={24} color={COLORS.background} />
         </View>
       ) : item.avatarUrl ? (
         <Image source={{ uri: item.avatarUrl }} style={styles.avatar} resizeMode="cover" />
@@ -25,7 +26,7 @@ export default function UserCard({ item, onPress, rightIconName = "chevron-forwa
       )}
 
       <View style={styles.info}>
-        <Text style={[styles.name, isGuild && {color: '#D97706'}]}>
+        <Text style={[styles.name, isGuild && {color: COLORS.primary}]}>
           {item.nickname}
         </Text>
         <Text style={styles.tag}>
@@ -41,11 +42,11 @@ export default function UserCard({ item, onPress, rightIconName = "chevron-forwa
 }
 
 const styles = StyleSheet.create({
-  card: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#FFF10' }, 
-  avatar: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: '#D97706' },
-  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#D5C4B020', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#D97706' },
-  avatarText: { color: '#D5C4B0', fontSize: 20, fontWeight: 'bold' },
+  card: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border }, 
+  avatar: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: COLORS.primary },
+  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.surfaceLight, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary },
+  avatarText: { color: COLORS.textSecondary, fontSize: 20, fontWeight: 'bold' },
   info: { marginLeft: 15, flex: 1 },
-  name: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }, 
-  tag: { color: '#D5C4B080', fontSize: 12, marginTop: 4 },
+  name: { color: COLORS.text, fontSize: 16, fontWeight: 'bold' }, 
+  tag: { color: COLORS.textMuted, fontSize: 12, marginTop: 4 },
 });

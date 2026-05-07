@@ -6,6 +6,7 @@ import { signOut, updatePassword, deleteUser, EmailAuthProvider, reauthenticateW
 import { doc, deleteDoc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 import { COLORS } from '../theme/colors';
+import { useToast } from '../context/ToastContext';
 
 export default function SettingsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('profile');
@@ -62,6 +63,8 @@ export default function SettingsScreen({ navigation }) {
   const [isSearchingAnime, setIsSearchingAnime] = useState(false);
   const animeSearchTimeout = useRef(null);
 
+  const { showToast } = useToast();
+
   useEffect(() => {
     const fetchUserData = async () => {
       if (auth.currentUser) {
@@ -86,7 +89,7 @@ export default function SettingsScreen({ navigation }) {
 
   const handleSaveProfile = async () => {
     if (!nickname.trim()) {
-      return Alert.alert("Увага", "Нікнейм не може бути пустим!");
+      return showToast('error', 'Увага', 'Нікнейм не може бути пустим!');
     }
 
     const cleanUsername = username.trim().toLowerCase();
@@ -94,12 +97,12 @@ export default function SettingsScreen({ navigation }) {
     if (cleanUsername) {
       const usernameRegex = /^[a-z0-9_]{3,20}$/;
       if (!usernameRegex.test(cleanUsername)) {
-        return Alert.alert("Помилка", "Унікальний тег має містити від 3 до 20 символів: тільки англійські літери, цифри або підкреслення (без пробілів).");
+        return showToast('error', 'Помилка', 'Унікальний тег має містити від 3 до 20 символів: тільки англійські літери, цифри або підкреслення (без пробілів).');
       }
       const q = query(collection(db, 'users'), where('username', '==', cleanUsername));
       const snap = await getDocs(q);
       if (!snap.empty && snap.docs[0].id !== auth.currentUser.uid) {
-        return Alert.alert("Помилка", "Цей унікальний тег вже зайнятий іншим користувачем! Спробуйте інший.");
+        return showToast('error', 'Помилка', 'Цей унікальний тег вже зайнятий іншим користувачем! Спробуйте інший.');
       }
     }
 
@@ -113,9 +116,9 @@ export default function SettingsScreen({ navigation }) {
         favoriteMusic: favoriteMusic,
         favoriteWatch: favoriteWatch 
       });
-      Alert.alert("Успіх", "Профіль успішно оновлено!");
+      showToast('success', 'Успіх', 'Профіль успішно оновлено!');
     } catch (error) {
-      Alert.alert("Помилка", error.message);
+      showToast('error', 'Помилка', error.message);
     } finally {
       setIsSavingProfile(false);
     }
@@ -127,9 +130,9 @@ export default function SettingsScreen({ navigation }) {
       await updateDoc(doc(db, 'users', auth.currentUser.uid), {
         notificationSettings: notifSettings
       });
-      Alert.alert("Успіх", "Налаштування сповіщень збережено!");
+      showToast('success', 'Успіх', 'Налаштування сповіщень збережено!');
     } catch (error) {
-      Alert.alert("Помилка", error.message);
+      showToast('error', 'Помилка', error.message);
     } finally {
       setIsSavingNotifs(false);
     }
@@ -263,24 +266,24 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const handleChangePassword = async () => {
-    if (!currentPassword || !newPassword) return Alert.alert("Помилка", "Будь ласка, заповніть обидва поля паролів.");
-    if (newPassword.length < 6) return Alert.alert("Помилка", "Новий пароль має містити щонайменше 6 символів.");
+    if (!currentPassword || !newPassword) return showToast('error', 'Помилка', 'Будь ласка, заповніть обидва поля паролів.');
+    if (newPassword.length < 6) return showToast('error', 'Помилка', 'Новий пароль має містити щонайменше 6 символів.');
     setIsChangingPassword(true);
     try {
       const user = auth.currentUser;
       const credential = EmailAuthProvider.credential(user.email, currentPassword);
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, newPassword);
-      Alert.alert("Успіх", "Пароль успішно змінено!");
+      showToast('success', 'Успіх', 'Пароль успішно змінено!');
       setCurrentPassword(''); setNewPassword('');
     } catch (error) {
-      if (error.code === 'auth/invalid-credential') Alert.alert("Помилка", "Неправильний поточний пароль!"); 
-      else Alert.alert("Помилка", error.message);
+      if (error.code === 'auth/invalid-credential') showToast('error', 'Помилка', 'Неправильний поточний пароль!'); 
+      else showToast('error', 'Помилка', error.message);
     } finally { setIsChangingPassword(false); }
   };
 
   const handleDeleteAccount = async () => {
-    if (!deletePassword) return Alert.alert("Увага", "Для видалення акаунта потрібно ввести поточний пароль.");
+    if (!deletePassword) return showToast('error', 'Увага', 'Для видалення акаунта потрібно ввести поточний пароль.');
     const confirmAction = async () => {
       setIsDeleting(true);
       try {
@@ -290,8 +293,8 @@ export default function SettingsScreen({ navigation }) {
         await deleteDoc(doc(db, "users", user.uid));
         await deleteUser(user);
       } catch (error) {
-        if (error.code === 'auth/invalid-credential') Alert.alert("Помилка", "Неправильний пароль! Акаунт не видалено."); 
-        else Alert.alert("Помилка", error.message);
+        if (error.code === 'auth/invalid-credential') showToast('error', 'Помилка', 'Неправильний пароль! Акаунт не видалено.'); 
+        else showToast('error', 'Помилка', error.message);
         setIsDeleting(false);
       }
     };

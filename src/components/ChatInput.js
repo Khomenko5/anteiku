@@ -6,6 +6,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { COLORS } from '../theme/colors';
+import { useToast } from '../context/ToastContext';
 
 const EMOJI_LIST = ['😀','😂','🥰','😎','🤔','😢','😡','👍','👎','🙏','❤️','🔥','🎉','✨','👀', '🚀', '💯', '💩', '💀', '🤡'];
 
@@ -33,6 +34,8 @@ export default function ChatInput({
   const [gifSearchQuery, setGifSearchQuery] = useState('');
   const [loadingGifs, setLoadingGifs] = useState(false);
   const searchTimeout = useRef(null);
+  
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (editingMessage) {
@@ -58,7 +61,7 @@ export default function ChatInput({
         setGifs(formattedGifs);
       }
     } catch (error) { 
-      console.error("Помилка завантаження GIF:", error); 
+      showToast('error', 'Помилка', 'Не вдалося завантажити GIF.'); 
     } finally { 
       setLoadingGifs(false); 
     }
@@ -103,7 +106,7 @@ export default function ChatInput({
           onSendMessage(null, cloudData.secure_url, null, null, null);
         }
       } catch (e) { 
-        alert("Помилка завантаження фото"); 
+        showToast('error', 'Помилка', 'Не вдалося завантажити фото.'); 
       } finally { 
         setIsUploading(false); 
       }
@@ -134,7 +137,7 @@ export default function ChatInput({
         onSendMessage(null, null, null, cloudData.secure_url, fileName); 
       }
     } catch (err) { 
-      alert("Помилка завантаження файлу"); 
+      showToast('error', 'Помилка', 'Не вдалося завантажити файл.'); 
     } finally { 
       setIsUploading(false); 
     }
@@ -168,7 +171,7 @@ export default function ChatInput({
           onSendMessage(null, null, cloudData.secure_url, null, null);
         }
       } catch (e) { 
-        alert("Помилка завантаження аудіо"); 
+        showToast('error', 'Помилка', 'Не вдалося завантажити голосове повідомлення.'); 
       } finally { 
         setIsUploading(false); 
       }
@@ -181,7 +184,7 @@ export default function ChatInput({
           setRecording(recording); 
           setIsRecording(true); 
         } else {
-          alert("Потрібен дозвіл на мікрофон!");
+          showToast('error', 'Доступ заборонено', 'Потрібен дозвіл на мікрофон для запису голосових повідомлень.');
         }
       } catch (err) { 
         console.error(err); 

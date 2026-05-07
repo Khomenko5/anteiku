@@ -9,6 +9,7 @@ import ImageViewerModal from './ImageViewerModal';
 import AudioPlayer from './AudioPlayer';
 import ChatInput from './ChatInput';
 import { COLORS } from '../theme/colors';
+import { useToast } from '../context/ToastContext';
 
 const CommentImageWrapper = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(null);
@@ -33,6 +34,7 @@ const CommentImageWrapper = ({ uri, onPress }) => {
 export default function PostItem({ item, targetUserId, isMyProfile, userData, navigation, onShare, isHighlighted, onDelete }) {
   const currentUser = auth.currentUser;
   const isWallPost = item.isWallPost === true;
+  const { showToast } = useToast();
 
   const postRef = isWallPost ? doc(db, "users", targetUserId, "wall_posts", item.id) : doc(db, "global_posts", item.originalPostId || item.id);
   const commentsRef = isWallPost ? collection(db, "users", targetUserId, "wall_posts", item.id, "comments") : collection(db, "global_posts", item.originalPostId || item.id, "comments");
@@ -82,39 +84,47 @@ export default function PostItem({ item, targetUserId, isMyProfile, userData, na
   };
 
   const toggleLike = async () => {
-    if (hasLiked) {
-      await updateDoc(postRef, { likes: arrayRemove(currentUser.uid) });
-    } else {
-      await updateDoc(postRef, { likes: arrayUnion(currentUser.uid) });
-      if (item.authorId !== currentUser.uid) {
-        await sendNotification(item.authorId, 'like', { id: currentUser.uid, name: userData?.nickname, avatarUrl: userData?.avatarUrl }, `вподобав ваш запис.`, item.id);
+    try {
+      if (hasLiked) {
+        await updateDoc(postRef, { likes: arrayRemove(currentUser.uid) });
+      } else {
+        await updateDoc(postRef, { likes: arrayUnion(currentUser.uid) });
+        if (item.authorId !== currentUser.uid) {
+          await sendNotification(item.authorId, 'like', { id: currentUser.uid, name: userData?.nickname, avatarUrl: userData?.avatarUrl }, `вподобав ваш запис.`, item.id);
+        }
       }
+    } catch (e) {
+      showToast('error', 'Помилка', 'Не вдалося зберегти реакцію.');
     }
   };
 
   const toggleRepost = async () => {
-    const globalPostId = item.originalPostId || item.id;
-    const myWallRef = collection(db, "users", currentUser.uid, "wall_posts");
-    
-    if (hasReposted) {
-      await updateDoc(postRef, { reposts: arrayRemove(currentUser.uid) });
-      const snap = await getDocs(query(myWallRef, where("originalPostId", "==", globalPostId)));
-      snap.forEach(d => deleteDoc(d.ref));
-    } else {
-      await updateDoc(postRef, { reposts: arrayUnion(currentUser.uid) });
-      await addDoc(myWallRef, {
-        isRepost: true, originalPostId: globalPostId,
-        originalAuthorId: item.isRepost ? item.originalAuthorId : item.authorId,
-        originalAuthorName: item.isRepost ? item.originalAuthorName : item.authorName,
-        text: item.text || null, imageUrl: item.imageUrl || null, authorAvatarUrl: item.authorAvatarUrl || null,
-        reposterId: currentUser.uid, reposterName: userData?.nickname, createdAt: serverTimestamp()
-      });
-      Alert.alert("Успіх", "Пост репостнуто на вашу стіну!");
+    try {
+      const globalPostId = item.originalPostId || item.id;
+      const myWallRef = collection(db, "users", currentUser.uid, "wall_posts");
+      
+      if (hasReposted) {
+        await updateDoc(postRef, { reposts: arrayRemove(currentUser.uid) });
+        const snap = await getDocs(query(myWallRef, where("originalPostId", "==", globalPostId)));
+        snap.forEach(d => deleteDoc(d.ref));
+      } else {
+        await updateDoc(postRef, { reposts: arrayUnion(currentUser.uid) });
+        await addDoc(myWallRef, {
+          isRepost: true, originalPostId: globalPostId,
+          originalAuthorId: item.isRepost ? item.originalAuthorId : item.authorId,
+          originalAuthorName: item.isRepost ? item.originalAuthorName : item.authorName,
+          text: item.text || null, imageUrl: item.imageUrl || null, authorAvatarUrl: item.authorAvatarUrl || null,
+          reposterId: currentUser.uid, reposterName: userData?.nickname, createdAt: serverTimestamp()
+        });
+        showToast('success', 'Успіх', 'Пост репостнуто на вашу стіну!');
 
-      const actualAuthorId = item.isRepost ? item.originalAuthorId : item.authorId;
-      if (actualAuthorId !== currentUser.uid) {
-        await sendNotification(actualAuthorId, 'repost', { id: currentUser.uid, name: userData?.nickname, avatarUrl: userData?.avatarUrl }, `зробив репост вашого запису.`, globalPostId);
+        const actualAuthorId = item.isRepost ? item.originalAuthorId : item.authorId;
+        if (actualAuthorId !== currentUser.uid) {
+          await sendNotification(actualAuthorId, 'repost', { id: currentUser.uid, name: userData?.nickname, avatarUrl: userData?.avatarUrl }, `зробив репост вашого запису.`, globalPostId);
+        }
       }
+    } catch (e) {
+      showToast('error', 'Помилка', 'Не вдалося зробити репост.');
     }
   };
 
@@ -156,10 +166,10 @@ export default function PostItem({ item, targetUserId, isMyProfile, userData, na
         }
         
         if (onDelete) onDelete(); 
+        showToast('success', 'Видалено', 'Запис успішно видалено.');
 
       } catch (error) { 
-        console.error("Помилка видалення:", error); 
-        Alert.alert("Помилка", "Сталася помилка при видаленні: " + error.message);
+        showToast('error', 'Помилка', 'Сталася помилка при видаленні.');
       }
     };
 
@@ -181,8 +191,9 @@ export default function PostItem({ item, targetUserId, isMyProfile, userData, na
           await deleteDoc(doc(commentsRef, reply.id));
         }
         await deleteDoc(doc(commentsRef, commentId));
+        showToast('success', 'Видалено', 'Коментар успішно видалено.');
       } catch (error) {
-        console.error("Помилка видалення коментаря:", error);
+        showToast('error', 'Помилка', 'Не вдалося видалити коментар.');
       }
     };
     if (Platform.OS === 'web') { if (window.confirm("Видалити коментар?")) confirmAction(); } 
@@ -223,8 +234,7 @@ export default function PostItem({ item, targetUserId, isMyProfile, userData, na
         await sendNotification(replyingTo.authorId, 'comment', { id: currentUser.uid, name: userData?.nickname, avatarUrl: userData?.avatarUrl }, `відповів на ваш коментар.`, item.id);
       }
     } catch (e) { 
-      console.error(e); 
-      Alert.alert("Помилка", "Не вдалося відправити коментар.");
+      showToast('error', 'Помилка', 'Не вдалося відправити коментар.');
     }
   };
 

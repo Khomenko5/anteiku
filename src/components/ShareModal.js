@@ -3,11 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Keyboard
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../api/firebaseConfig';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, increment } from 'firebase/firestore';
+import { useToast } from '../context/ToastContext';
 
 import UserCard from './UserCard';
 
 export default function ShareModal({ visible, onClose, postToShare, currentUserData, allUsers }) {
   const [shareSearchText, setShareSearchText] = useState('');
+  const { showToast } = useToast();
 
   if (!visible) return null;
 
@@ -29,18 +31,20 @@ export default function ShareModal({ visible, onClose, postToShare, currentUserD
     try {
       if (targetUser.isGuild) {
         await addDoc(collection(db, "guilds", targetUser.id, "messages"), { text: "", sharedPost: sharedData, senderId: myId, senderName: currentUserData.nickname, createdAt: serverTimestamp() });
-        alert(`Пост успішно переслано в чат гільдії!`);
+        showToast('success', 'Успіх', 'Пост успішно переслано в чат гільдії!');
       } else {
         const targetId = targetUser.id;
         const chatId = myId < targetId ? `${myId}_${targetId}` : `${targetId}_${myId}`;
         await addDoc(collection(db, "chats", chatId, "messages"), { text: "", sharedPost: sharedData, senderId: myId, createdAt: serverTimestamp(), isRead: false });
         await updateDoc(doc(db, "users", myId), { activeContacts: arrayUnion(targetId) });
         await updateDoc(doc(db, "users", targetId), { activeContacts: arrayUnion(myId), [`unreadCounts.${myId}`]: increment(1) });
-        alert(`Пост переслано до ${targetUser.nickname}!`);
+        showToast('success', 'Успіх', `Пост переслано до ${targetUser.nickname}!`);
       }
       setShareSearchText(''); 
       onClose(); 
-    } catch (error) { alert("Не вдалося переслати пост."); }
+    } catch (error) { 
+      showToast('error', 'Помилка', 'Не вдалося переслати пост.'); 
+    }
   };
 
   return (

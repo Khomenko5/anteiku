@@ -10,6 +10,7 @@ import { HelmetProvider } from 'react-helmet-async';
 
 import NotificationHandler from './src/components/NotificationHandler'; 
 import { UserProvider } from './src/context/UserContext';
+import { ToastProvider } from './src/context/ToastContext';
 import { COLORS } from './src/theme/colors';
 
 if (Platform.OS === 'web') {
@@ -123,19 +124,21 @@ export default function App() {
 
   return (
     <HelmetProvider>
-      <UserProvider>
-        {user && isEmailVerified && <NotificationHandler />}
-        
-        <NavigationContainer linking={linking}> 
-          {!user ? (
-            <AuthNavigator />
-          ) : isEmailVerified ? (
-            <AppNavigation />
-          ) : (
-            <VerifyEmailScreen onCheck={handleVerificationCheck} />
-          )}
-        </NavigationContainer>
-      </UserProvider>
+      <ToastProvider>
+        <UserProvider>
+          {user && isEmailVerified && <NotificationHandler />}
+          
+          <NavigationContainer linking={linking}> 
+            {!user ? (
+              <AuthNavigator />
+            ) : isEmailVerified ? (
+              <AppNavigation />
+            ) : (
+              <VerifyEmailScreen onCheck={handleVerificationCheck} />
+            )}
+          </NavigationContainer>
+        </UserProvider>
+      </ToastProvider>
     </HelmetProvider>
   );
 }

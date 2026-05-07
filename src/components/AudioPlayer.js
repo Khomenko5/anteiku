@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import { COLORS } from '../theme/colors';
 
 export default function AudioPlayer({ audioUrl }) {
   const [sound, setSound] = useState(null);
@@ -95,7 +96,7 @@ export default function AudioPlayer({ audioUrl }) {
   return (
     <View style={styles.audioPlayerContainer}>
       <TouchableOpacity onPress={togglePlayPause} style={[styles.playPauseBtn, Platform.OS === 'web' ? { outlineStyle: 'none' } : undefined]}>
-        <Ionicons name={isPlaying ? "pause" : "play"} size={18} color="#FFF" />
+        <Ionicons name={isPlaying ? "pause" : "play"} size={18} color={COLORS.background} />
       </TouchableOpacity>
       <TouchableOpacity activeOpacity={1} style={styles.audioTrackContainer} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)} onPress={handleSeek}>
         <View style={[styles.audioTrackBg, { pointerEvents: 'none' }]} />
@@ -108,9 +109,9 @@ export default function AudioPlayer({ audioUrl }) {
 
 const styles = StyleSheet.create({
   audioPlayerContainer: { flexDirection: 'row', alignItems: 'center', minWidth: 220, maxWidth: 280, marginTop: 4, marginBottom: 8, backgroundColor: 'rgba(0,0,0,0.15)', padding: 8, borderRadius: 16 },
-  playPauseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#D97706', justifyContent: 'center', alignItems: 'center', marginRight: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
+  playPauseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
   audioTrackContainer: { flex: 1, height: 20, justifyContent: 'center', position: 'relative', cursor: 'pointer' },
   audioTrackBg: { width: '100%', height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 },
-  audioProgress: { position: 'absolute', left: 0, height: 6, backgroundColor: '#D97706', borderRadius: 3 },
-  audioTimeText: { color: '#FFF', fontSize: 10, marginLeft: 10, fontWeight: 'bold', minWidth: 60, textAlign: 'right' },
+  audioProgress: { position: 'absolute', left: 0, height: 6, backgroundColor: COLORS.primary, borderRadius: 3 },
+  audioTimeText: { color: COLORS.text, fontSize: 10, marginLeft: 10, fontWeight: 'bold', minWidth: 60, textAlign: 'right' },
 });

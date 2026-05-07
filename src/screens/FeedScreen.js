@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker'; 
 import { db } from '../api/firebaseConfig'; 
-import { collection, addDoc, onSnapshot, query, orderBy, limit, serverTimestamp, getDocs, startAfter, startAt, endAt } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, limit, serverTimestamp, getDocs, startAfter, startAt } from 'firebase/firestore';
 import { Helmet } from 'react-helmet-async';
 
 import PostItem from '../components/PostItem';
@@ -11,11 +11,12 @@ import ShareModal from '../components/ShareModal';
 import UserCard from '../components/UserCard';
 
 import { COLORS } from '../theme/colors';
-import { useUser } from '../context/UserContext'; // Імпортуємо наш глобальний стан!
+import { useUser } from '../context/UserContext';
+import { useToast } from '../context/ToastContext';
 
 export default function FeedScreen({ navigation }) {
-  // МАГІЯ: Беремо поточного юзера і його дані прямо з контексту!
   const { currentUser, userData } = useUser();
+  const { showToast } = useToast();
 
   const [posts, setPosts] = useState([]);
   const [lastDoc, setLastDoc] = useState(null);
@@ -86,23 +87,28 @@ export default function FeedScreen({ navigation }) {
   };
 
   useEffect(() => {
-    const qTopGuilds = query(collection(db, "guilds"), orderBy("points", "desc"), limit(5));
-    const unsubscribeTopGuilds = onSnapshot(qTopGuilds, (snapshot) => { 
-      setTopGuilds(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); 
-    });
-    
-    const fetchInitialUsersForShare = async () => {
+    let isMounted = true;
+
+    const fetchInitialData = async () => {
       try {
+        const qTopGuilds = query(collection(db, "guilds"), orderBy("points", "desc"), limit(5));
+        const guildsSnap = await getDocs(qTopGuilds);
+        
         const qUsers = query(collection(db, "users"), limit(30));
-        const snap = await getDocs(qUsers);
-        setAllUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const usersSnap = await getDocs(qUsers);
+
+        if (isMounted) {
+          setTopGuilds(guildsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }
       } catch (e) {
-        console.error(e);
+        console.error("Помилка завантаження початкових даних:", e);
       }
     };
-    fetchInitialUsersForShare();
-    
-    return () => { unsubscribeTopGuilds(); };
+
+    fetchInitialData();
+
+    return () => { isMounted = false; };
   }, []);
 
   useEffect(() => { 
@@ -134,7 +140,7 @@ export default function FeedScreen({ navigation }) {
 
         setSearchResults(results);
       } catch (error) {
-        console.error("Помилка пошуку:", error);
+        showToast('error', 'Помилка', 'Не вдалося виконати пошук.');
       } finally {
         setIsSearchingUsers(false);
       }
@@ -182,8 +188,9 @@ export default function FeedScreen({ navigation }) {
       setSelectedImage(null); 
       setIsUploading(false); 
       setIsCreatingPost(false);
+      showToast('success', 'Успіх', 'Пост успішно опубліковано!');
     } catch (error) { 
-      alert("Помилка: " + error.message); 
+      showToast('error', 'Помилка', error.message);
       setIsUploading(false); 
     }
   };

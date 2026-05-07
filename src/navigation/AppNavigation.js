@@ -14,6 +14,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 
+import { COLORS } from '../theme/colors';
+
 const Tab = createBottomTabNavigator();
 
 export default function AppNavigation() {
@@ -56,7 +58,7 @@ export default function AppNavigation() {
 
   return (
     <Tab.Navigator
-      sceneContainerStyle={{ backgroundColor: '#302D28' }}
+      sceneContainerStyle={{ backgroundColor: COLORS.background }}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: false,
@@ -72,7 +74,7 @@ export default function AppNavigation() {
           maxWidth: 400,
           height: 70,
           borderRadius: 35,
-          backgroundColor: '#47392b',
+          backgroundColor: COLORS.surfaceLight,
           borderTopWidth: 0,
           elevation: 10,
           shadowColor: '#000',
@@ -109,7 +111,7 @@ export default function AppNavigation() {
               width: 44,
               height: 44,
               borderRadius: 22,
-              backgroundColor: focused ? '#D97706' : 'transparent',
+              backgroundColor: focused ? COLORS.primary : 'transparent',
               justifyContent: 'center',
               alignItems: 'center',
             }}>
@@ -121,8 +123,8 @@ export default function AppNavigation() {
     >
       <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen name="Board" component={NoticeBoardScreen} />
-      <Tab.Screen name="Notifications" component={NotificationsScreen} options={{ tabBarBadge: unreadCount > 0 ? unreadCount : null, tabBarBadgeStyle: { top: 10, backgroundColor: '#EF4444', color: '#FFF', fontSize: 12 } }} />
-      <Tab.Screen name="Chat" component={MessagesScreen} options={{ tabBarBadge: unreadChatCount > 0 ? unreadChatCount : null, tabBarBadgeStyle: { top: 10, backgroundColor: '#EF4444', color: '#FFF', fontSize: 12 } }} />
+      <Tab.Screen name="Notifications" component={NotificationsScreen} options={{ tabBarBadge: unreadCount > 0 ? unreadCount : null, tabBarBadgeStyle: { top: 10, backgroundColor: COLORS.danger, color: '#FFF', fontSize: 12 } }} />
+      <Tab.Screen name="Chat" component={MessagesScreen} options={{ tabBarBadge: unreadChatCount > 0 ? unreadChatCount : null, tabBarBadgeStyle: { top: 10, backgroundColor: COLORS.danger, color: '#FFF', fontSize: 12 } }} />
       <Tab.Screen name="Guild" component={GuildScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} listeners={({ navigation }) => ({ tabPress: (e) => { e.preventDefault(); navigation.navigate('Profile', { identifier: myIdentifier || auth.currentUser?.uid }); }, })} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarItemStyle: { display: 'none' } }} />
